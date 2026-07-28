@@ -33,3 +33,6 @@ coverage/
 # Go
 *.test
 *.out
+
+# Go workspace checksum file (go.work itself is tracked)
+go.work.sum
