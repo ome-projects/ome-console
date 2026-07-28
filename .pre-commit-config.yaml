@@ -1,0 +1,102 @@
+default_stages: [pre-commit, pre-push, manual]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents, --unsafe]
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+        exclude: .*_test\.go$
+      - id: mixed-line-ending
+      - id: no-commit-to-branch
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        args: ['-L', 'AfterAll,NotIn,UpToDate,WithT,allReady,rouge']
+        exclude: |
+          (?x)^(
+            .*go\.sum$|
+            .*package-lock\.json$
+          )$
+
+  - repo: local
+    hooks:
+      # ---- backend (Go module lives in backend/) ----
+      - id: go-fmt
+        name: go fmt
+        description: Format Go code with gofmt
+        entry: bash -c 'cd backend && gofmt -s -w .'
+        language: system
+        files: ^backend/.*\.go$
+        pass_filenames: false
+
+      - id: go-vet
+        name: go vet
+        description: Run go vet on the backend module
+        entry: bash -c 'cd backend && go vet ./...'
+        language: system
+        files: ^backend/.*\.go$
+        pass_filenames: false
+
+      - id: go-build
+        name: go build
+        description: Ensure the backend module compiles
+        entry: bash -c 'cd backend && go build ./...'
+        language: system
+        files: ^backend/.*\.go$
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        description: Check that backend go.mod and go.sum are tidy
+        entry: bash -c 'cd backend && go mod tidy && git diff --exit-code go.mod go.sum'
+        language: system
+        files: ^backend/(.*\.go|go\.(mod|sum))$
+        pass_filenames: false
+        stages: [pre-push]
+
+      # ---- frontend (npm package lives in frontend/) ----
+      - id: npm-lockfile-sync
+        name: npm lockfile in sync
+        description: Ensure frontend package-lock.json matches package.json
+        entry: bash -c 'cd frontend && npm install --package-lock-only --ignore-scripts --no-audit --no-fund && git diff --exit-code package-lock.json'
+        language: system
+        files: ^frontend/package(-lock)?\.json$
+        pass_filenames: false
+
+      - id: prettier-check
+        name: prettier check
+        description: Check frontend formatting with Prettier
+        entry: bash -c 'cd frontend && npm run format:check'
+        language: system
+        files: ^frontend/src/.*\.(ts|tsx|js|jsx|json|css)$
+        pass_filenames: false
+
+      - id: eslint
+        name: eslint
+        description: Lint the frontend with ESLint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: typecheck
+        name: typescript typecheck
+        description: Type-check the frontend with tsc
+        entry: bash -c 'cd frontend && npm run typecheck'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+        stages: [pre-push]
