@@ -37,7 +37,7 @@ jobs:
             build-mode: none
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # autobuild for Go needs a toolchain matching the workspace.
       - name: Setup Go
