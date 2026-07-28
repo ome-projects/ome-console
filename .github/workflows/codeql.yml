@@ -42,7 +42,7 @@ jobs:
       # autobuild for Go needs a toolchain matching the workspace.
       - name: Setup Go
         if: matrix.language == 'go'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           cache: true
