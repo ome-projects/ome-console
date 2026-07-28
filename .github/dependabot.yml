@@ -1,0 +1,60 @@
+version: 2
+updates:
+  # Backend Go module
+  - package-ecosystem: "gomod"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    labels:
+      - "dependencies"
+      - "backend"
+    groups:
+      k8s:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+    ignore:
+      # Pin to the client-go line that matches the cluster we target; major and
+      # minor bumps here change API behavior and should be deliberate.
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "sigs.k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # Frontend npm package
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    labels:
+      - "dependencies"
+      - "frontend"
+    groups:
+      # Next.js and React move together; separate PRs tend to break the build.
+      next:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@testing-library/*"
+
+  # GitHub Actions used by the workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    labels:
+      - "dependencies"
+      - "ci"

@@ -1,0 +1,47 @@
+# Auto-labeling rules applied by .github/workflows/pr-labeler.yml.
+# Paths are repo-root relative; in OME these same labels were scoped under
+# web-console/.
+
+# Frontend
+frontend:
+  - changed-files:
+    - any-glob-to-any-file: 'frontend/**/*'
+
+# Backend
+backend:
+  - changed-files:
+    - any-glob-to-any-file: 'backend/**/*'
+
+# CI/CD
+ci:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/**/*'
+      - '.pre-commit-config.yaml'
+      - 'Makefile'
+
+# Documentation
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.md'
+
+# Tests
+tests:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'backend/**/*_test.go'
+      - 'frontend/src/**/*.test.*'
+      - 'frontend/src/**/*.spec.*'
+      - 'frontend/src/test/**/*'
+
+# Dependencies
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'backend/go.mod'
+      - 'backend/go.sum'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'go.work'
+      - 'go.work.sum'

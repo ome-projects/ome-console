@@ -1,0 +1,94 @@
+# Label definitions synced by .github/workflows/sync-labels.yml.
+# Colors are carried over from the OME repository so the two stay visually consistent.
+
+# =============================================================================
+# Component Labels
+# =============================================================================
+- name: frontend
+  color: "F472B6"
+  description: "Frontend/UI changes"
+
+- name: backend
+  color: "DB2777"
+  description: "Backend API changes"
+
+- name: ci
+  color: "BFD4F2"
+  description: "CI/CD changes"
+
+- name: documentation
+  color: "0075CA"
+  description: "Documentation changes"
+
+- name: dependencies
+  color: "0366D6"
+  description: "Dependency updates"
+
+- name: tests
+  color: "C2E0C6"
+  description: "Test changes"
+
+# =============================================================================
+# Kind Labels
+# =============================================================================
+- name: kind/bug
+  color: "D73A4A"
+  description: "Something isn't working"
+
+- name: kind/feature
+  color: "A2EEEF"
+  description: "New feature or request"
+
+- name: kind/enhancement
+  color: "84B6EB"
+  description: "Improvement to existing functionality"
+
+- name: kind/documentation
+  color: "0075CA"
+  description: "Documentation improvements"
+
+- name: kind/cleanup
+  color: "FEF2C0"
+  description: "Code cleanup or refactoring"
+
+- name: kind/breaking-change
+  color: "B60205"
+  description: "Breaking change"
+
+# =============================================================================
+# Priority Labels
+# =============================================================================
+- name: priority/critical
+  color: "B60205"
+  description: "Critical priority"
+
+- name: priority/high
+  color: "D93F0B"
+  description: "High priority"
+
+- name: priority/medium
+  color: "FBCA04"
+  description: "Medium priority"
+
+- name: priority/low
+  color: "0E8A16"
+  description: "Low priority"
+
+# =============================================================================
+# Status Labels
+# =============================================================================
+- name: status/wip
+  color: "FBCA04"
+  description: "Work in progress"
+
+- name: status/blocked
+  color: "B60205"
+  description: "Blocked by another issue or PR"
+
+- name: status/needs-review
+  color: "0E8A16"
+  description: "Needs review"
+
+- name: status/needs-rebase
+  color: "E99695"
+  description: "Needs rebase on main"
