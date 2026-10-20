@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient, QueryKey } from '@tanstack/react-query'
-import { ListResponse } from '../types/common'
 import { isApiError } from '../types/api'
+import type { ResourceApi, ResourceRef } from '../api/createResourceApi'
+
+export type { ResourceApi, ResourceRef } from '../api/createResourceApi'
 
 export const DEFAULT_QUERY_CONFIG = {
   staleTime: 30000,
@@ -23,14 +25,6 @@ export const queryKeys = {
     relation,
     ...args.filter((a) => a !== undefined),
   ],
-}
-
-export interface ResourceApi<T, C = Partial<T>, U = Partial<T>> {
-  list: (namespace?: string) => Promise<ListResponse<T>>
-  get: (name: string, namespace?: string) => Promise<T>
-  create: (data: C) => Promise<T>
-  update: (name: string, data: U) => Promise<T>
-  delete: (name: string) => Promise<void>
 }
 
 export function createResourceHooks<T, C = Partial<T>, U = Partial<T>>(
@@ -74,7 +68,8 @@ export function createResourceHooks<T, C = Partial<T>, U = Partial<T>>(
     useUpdate: () => {
       const qc = useQueryClient()
       return useMutation({
-        mutationFn: ({ name, data }: { name: string; data: U }) => api.update(name, data),
+        mutationFn: ({ name, namespace, data }: ResourceRef & { data: U }) =>
+          api.update(name, data, namespace),
         onSuccess: () => qc.invalidateQueries({ queryKey: [resourceKey] }),
       })
     },
@@ -82,7 +77,7 @@ export function createResourceHooks<T, C = Partial<T>, U = Partial<T>>(
     useDelete: () => {
       const qc = useQueryClient()
       return useMutation({
-        mutationFn: (name: string) => api.delete(name),
+        mutationFn: ({ name, namespace }: ResourceRef) => api.delete(name, namespace),
         onSuccess: () => qc.invalidateQueries({ queryKey: [resourceKey] }),
       })
     },

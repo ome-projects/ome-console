@@ -21,8 +21,10 @@ const runtimeHooks = createResourceHooks<
 
 // Export standard CRUD hooks from factory
 export const useRuntimes = runtimeHooks.useList
+/** One runtime; pass the namespace for a ServingRuntime. */
 export const useRuntime = runtimeHooks.useGet
 export const useCreateRuntime = runtimeHooks.useCreate
+/** Mutation input: `{ name, namespace? }`. */
 export const useDeleteRuntime = runtimeHooks.useDelete
 
 // Custom useUpdateRuntime to match existing API signature
@@ -31,8 +33,15 @@ export function useUpdateRuntime() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ name, runtime }: { name: string; runtime: Partial<ClusterServingRuntime> }) =>
-      runtimesApi.update(name, runtime),
+    mutationFn: ({
+      name,
+      namespace,
+      runtime,
+    }: {
+      name: string
+      namespace?: string
+      runtime: Partial<ClusterServingRuntime>
+    }) => runtimesApi.update(name, runtime, namespace),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.all(RESOURCE_KEY) })
     },

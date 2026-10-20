@@ -13,6 +13,7 @@ import { Icons, StatIcons } from '@/components/ui/Icons'
 import { BulkActionDropdown } from '@/components/ui/BulkActionDropdown'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
+import { resourceHref, resourceKey } from '@/lib/utils'
 import {
   ResourcePageHeader,
   StatsGrid,
@@ -157,21 +158,21 @@ export default function ServicesPage() {
             ) : (
               services.map((service: InferenceService) => (
                 <tr
-                  key={service.metadata.name}
+                  key={resourceKey(service)}
                   className={`transition-colors hover:bg-muted/30 ${
-                    selectedItems.has(service.metadata.name) ? 'bg-primary/5' : ''
+                    selectedItems.has(resourceKey(service)) ? 'bg-primary/5' : ''
                   }`}
                 >
                   <td className="w-12 px-4 py-4">
                     <Checkbox
-                      checked={selectedItems.has(service.metadata.name)}
-                      onChange={(checked) => handleSelectItem(service.metadata.name, checked)}
+                      checked={selectedItems.has(resourceKey(service))}
+                      onChange={(checked) => handleSelectItem(resourceKey(service), checked)}
                       aria-label={`Select ${service.metadata.name}`}
                     />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
                     <Link
-                      href={`/services/${service.metadata.name}`}
+                      href={resourceHref('/services', service)}
                       className="text-primary hover:text-primary/80 transition-colors"
                     >
                       {service.metadata.name}

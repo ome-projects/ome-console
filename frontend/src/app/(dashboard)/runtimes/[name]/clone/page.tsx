@@ -1,17 +1,18 @@
 'use client'
 
 import { useRuntime, useCreateRuntime } from '@/lib/hooks/useRuntimes'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useResourceRef } from '@/lib/hooks/useResourceRef'
+import { withNamespace } from '@/lib/utils'
 import { RuntimeForm } from '@/components/forms/runtime'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { useMemo } from 'react'
 import type { ClusterServingRuntime } from '@/lib/types/runtime'
 
 export default function CloneRuntimePage() {
-  const params = useParams()
+  const { name: sourceName, namespace } = useResourceRef()
   const router = useRouter()
-  const sourceName = params.name as string
-  const { data: runtime, isLoading: isLoadingRuntime } = useRuntime(sourceName)
+  const { data: runtime, isLoading: isLoadingRuntime } = useRuntime(sourceName, namespace)
   const createRuntime = useCreateRuntime()
 
   // Prepare cloned data - clear the name so user must enter a new one
@@ -51,7 +52,7 @@ export default function CloneRuntimePage() {
       initialData={clonedData}
       onSubmit={handleSubmit}
       isLoading={isLoadingRuntime}
-      backLink={`/runtimes/${sourceName}`}
+      backLink={withNamespace(`/runtimes/${sourceName}`, namespace)}
       backLinkText={`Back to ${sourceName}`}
       cloneFrom={sourceName}
     />

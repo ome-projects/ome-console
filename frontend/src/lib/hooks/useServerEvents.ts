@@ -2,9 +2,13 @@ import { useEffect, useRef, useCallback } from 'react'
 
 export interface ResourceEvent {
   type: 'add' | 'update' | 'delete'
-  resource: 'models' | 'runtimes' | 'services' | 'accelerators'
+  /** The backend's resource key, e.g. `models`, `runtimes`, `services`, `accelerators`. */
+  resource: string
+  /** Empty for cluster-scoped resources. */
+  namespace?: string
+  /** `name`, or `namespace/name` for namespaced resources. */
   name: string
-  data?: any
+  data?: unknown
 }
 
 export interface UseServerEventsOptions {
@@ -33,7 +37,7 @@ export function useServerEvents(options: UseServerEventsOptions = {}) {
     const eventSource = new EventSource(`${apiUrl}/api/v1/events`)
 
     eventSource.addEventListener('connected', () => {
-      console.log('[SSE] Connected to event stream')
+      console.debug('[SSE] Connected to event stream')
       reconnectAttempts.current = 0
       onConnected?.()
     })
@@ -41,7 +45,7 @@ export function useServerEvents(options: UseServerEventsOptions = {}) {
     eventSource.addEventListener('add', (e) => {
       try {
         const event: ResourceEvent = JSON.parse(e.data)
-        console.log('[SSE] Resource added:', event)
+        console.debug('[SSE] Resource added:', event.resource, event.name)
         onEvent?.(event)
       } catch (error) {
         console.error('[SSE] Failed to parse add event:', error)
@@ -51,7 +55,7 @@ export function useServerEvents(options: UseServerEventsOptions = {}) {
     eventSource.addEventListener('update', (e) => {
       try {
         const event: ResourceEvent = JSON.parse(e.data)
-        console.log('[SSE] Resource updated:', event)
+        console.debug('[SSE] Resource updated:', event.resource, event.name)
         onEvent?.(event)
       } catch (error) {
         console.error('[SSE] Failed to parse update event:', error)
@@ -61,7 +65,7 @@ export function useServerEvents(options: UseServerEventsOptions = {}) {
     eventSource.addEventListener('delete', (e) => {
       try {
         const event: ResourceEvent = JSON.parse(e.data)
-        console.log('[SSE] Resource deleted:', event)
+        console.debug('[SSE] Resource deleted:', event.resource, event.name)
         onEvent?.(event)
       } catch (error) {
         console.error('[SSE] Failed to parse delete event:', error)
@@ -81,7 +85,7 @@ export function useServerEvents(options: UseServerEventsOptions = {}) {
       // Exponential backoff reconnection
       if (reconnectAttempts.current < maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
-        console.log(
+        console.debug(
           `[SSE] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`
         )
         reconnectTimeoutRef.current = setTimeout(() => {
@@ -103,7 +107,7 @@ export function useServerEvents(options: UseServerEventsOptions = {}) {
     }
 
     if (eventSourceRef.current) {
-      console.log('[SSE] Disconnecting from event stream')
+      console.debug('[SSE] Disconnecting from event stream')
       eventSourceRef.current.close()
       eventSourceRef.current = null
       onDisconnected?.()

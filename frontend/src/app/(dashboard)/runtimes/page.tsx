@@ -15,6 +15,7 @@ import { SortableHeader } from '@/components/ui/SortableHeader'
 import { BulkActionDropdown } from '@/components/ui/BulkActionDropdown'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
+import { resourceHref, resourceKey } from '@/lib/utils'
 import {
   ResourcePageHeader,
   StatsGrid,
@@ -194,21 +195,21 @@ export default function RuntimesPage() {
             ) : (
               sortedRuntimes.map((runtime) => (
                 <tr
-                  key={runtime.metadata.name}
+                  key={resourceKey(runtime)}
                   className={`transition-colors hover:bg-muted/30 ${
-                    selectedItems.has(runtime.metadata.name) ? 'bg-primary/5' : ''
+                    selectedItems.has(resourceKey(runtime)) ? 'bg-primary/5' : ''
                   }`}
                 >
                   <td className="w-12 px-4 py-4">
                     <Checkbox
-                      checked={selectedItems.has(runtime.metadata.name)}
-                      onChange={(checked) => handleSelectItem(runtime.metadata.name, checked)}
+                      checked={selectedItems.has(resourceKey(runtime))}
+                      onChange={(checked) => handleSelectItem(resourceKey(runtime), checked)}
                       aria-label={`Select ${runtime.metadata.name}`}
                     />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <Link
-                      href={`/runtimes/${runtime.metadata.name}`}
+                      href={resourceHref('/runtimes', runtime)}
                       className="text-sm font-medium text-primary hover:text-primary/80 transition-colors"
                     >
                       {runtime.metadata.name}
