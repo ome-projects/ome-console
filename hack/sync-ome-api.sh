@@ -77,9 +77,9 @@ else
   crd_dir=$tmp/ome-$sha/config/crd/full
 fi
 
-mkdir -p "$api_dir"
-cp "$tmp/swagger.json" "$api_dir/swagger.json"
-node "$extractor" "$crd_dir" "$api_dir/crd-meta.json"
+# Build the whole snapshot under $tmp first, so a CRD the extractor rejects leaves
+# api/ome untouched instead of half-updated.
+node "$extractor" "$crd_dir" "$tmp/crd-meta.json"
 
 # Re-running at the already pinned sha keeps its sync date, so the result is
 # byte-identical and `git diff --exit-code api/ome` can verify the snapshot.
@@ -87,7 +87,10 @@ synced=$(date -u +%Y-%m-%d)
 if [[ -f $api_dir/OME_VERSION && $(head -n 1 "$api_dir/OME_VERSION") == "$sha" ]]; then
   synced=$(awk 'NR == 2 { print $2 }' "$api_dir/OME_VERSION")
 fi
-printf '%s\nsynced %s from ome-projects/ome\n' "$sha" "$synced" >"$api_dir/OME_VERSION"
+printf '%s\nsynced %s from ome-projects/ome\n' "$sha" "$synced" >"$tmp/OME_VERSION"
+
+mkdir -p "$api_dir"
+cp "$tmp/swagger.json" "$tmp/crd-meta.json" "$tmp/OME_VERSION" "$api_dir/"
 
 echo "api/ome now tracks ome-projects/ome@$sha"
 git -C "$repo_root" diff --stat -- api/ome
