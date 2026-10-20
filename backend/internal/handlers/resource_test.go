@@ -166,7 +166,7 @@ func TestResourceHandler_NamespacedRoutes(t *testing.T) {
 		expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/services",
 			[]byte(`{"kind":"BaseModel","metadata":{"name":"x"}}`), "application/json"), http.StatusBadRequest, "BAD_REQUEST")
 		expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/services",
-			[]byte(`{"metadata":{"name":"x","namespace":"team-b"}}`), "application/json"), http.StatusInternalServerError, "INTERNAL")
+			[]byte(`{"metadata":{"name":"x","namespace":"team-b"}}`), "application/json"), http.StatusBadRequest, "BAD_REQUEST")
 		expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/services", []byte(`not json`), "application/json"),
 			http.StatusBadRequest, "BAD_REQUEST")
 	})
@@ -192,6 +192,8 @@ func TestResourceHandler_ClusterScopedRoutes(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d: %s", rec.Code, rec.Body.String())
 	}
+	expectError(t, do(t, router, http.MethodPost, "/api/v1/models",
+		[]byte(`{"metadata":{"name":"x","namespace":"team-a"}}`), "application/json"), http.StatusBadRequest, "BAD_REQUEST")
 	rec = do(t, router, http.MethodDelete, "/api/v1/models/llama", nil, "")
 	if rec.Code != http.StatusOK || decode(t, rec)["namespace"] != nil {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body.String())
