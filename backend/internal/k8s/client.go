@@ -60,6 +60,9 @@ type Client struct {
 	// CacheSyncTimeout bounds how long StartInformers waits for the caches to fill. A missing
 	// CRD or a missing list/watch permission would otherwise make the wait last forever.
 	CacheSyncTimeout time.Duration
+	// FieldValidation is the API server field validation mode for writes: Strict (default),
+	// Warn or Ignore. See WriteOptions.
+	FieldValidation string
 
 	// registered holds the resources whose informers were created before StartInformers ran.
 	// It is written during SetupInformers and only read afterwards.
@@ -130,6 +133,7 @@ func NewClientWith(clientset kubernetes.Interface, dynamicClient dynamic.Interfa
 		InformerFactory:        informers.NewSharedInformerFactory(clientset, informerResyncPeriod),
 		Broadcaster:            NewEventBroadcaster(),
 		CacheSyncTimeout:       DefaultCacheSyncTimeout,
+		FieldValidation:        FieldValidationStrict,
 		registered:             make(map[schema.GroupVersionResource]bool),
 		stopCh:                 make(chan struct{}),
 	}
