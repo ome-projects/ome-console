@@ -76,9 +76,12 @@ func main() {
 
 	// Create HTTP server
 	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
+		Addr:              ":" + port,
+		Handler:           router,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		// Bounds ordinary responses. The SSE stream at GET /api/v1/events outlives this; its
+		// handler renews the write deadline before every write instead (see handlers/events.go).
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}

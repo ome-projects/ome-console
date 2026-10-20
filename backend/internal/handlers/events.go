@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -10,6 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
+)
+
+const (
+	// keepAliveInterval is how often the stream sends a ping so proxies and clients see traffic.
+	keepAliveInterval = 30 * time.Second
+	// sseWriteTimeout is renewed before every write. The server's global WriteTimeout would
+	// end this long-lived response; a per-write deadline still drops a client that stops reading.
+	sseWriteTimeout = 2 * keepAliveInterval
 )
 
 // defaultAllowedOrigins is used when CORS_ALLOWED_ORIGINS is not set
@@ -60,6 +70,7 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
 
 	// Subscribe to events
 	eventChan := h.k8sClient.Broadcaster.Subscribe()
@@ -68,12 +79,22 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	clientIP := c.ClientIP()
 	h.logger.Info("SSE client connected", zap.String("client_ip", clientIP))
 
+	// Renew the write deadline before each write; without this the server's WriteTimeout
+	// would cut the stream. Writers that cannot set deadlines (tests) are left alone.
+	controller := http.NewResponseController(c.Writer)
+	extendDeadline := func() {
+		if err := controller.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			h.logger.Debug("Could not set SSE write deadline", zap.Error(err))
+		}
+	}
+
 	// Send initial connection confirmation
+	extendDeadline()
 	fmt.Fprintf(c.Writer, "event: connected\ndata: {\"message\": \"Connected to event stream\"}\n\n")
 	c.Writer.Flush()
 
 	// Create a ticker for periodic keep-alive messages
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(keepAliveInterval)
 	defer ticker.Stop()
 
 	// Listen for events and send to client
@@ -95,11 +116,13 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 
 			// Send event to client
 			// Format: event: <event-type>\ndata: <json-data>\n\n
+			extendDeadline()
 			fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event.Type, data)
 			c.Writer.Flush()
 
 		case <-ticker.C:
 			// Send keep-alive ping
+			extendDeadline()
 			fmt.Fprintf(c.Writer, "event: ping\ndata: {\"timestamp\": \"%s\"}\n\n", time.Now().Format(time.RFC3339))
 			c.Writer.Flush()
 
