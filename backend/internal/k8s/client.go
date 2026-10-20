@@ -7,12 +7,20 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+)
+
+const (
+	// DefaultCacheSyncTimeout bounds how long StartInformers waits for the caches to fill.
+	DefaultCacheSyncTimeout = 60 * time.Second
+	// informerResyncPeriod is how often informers replay their cache through UpdateFunc.
+	informerResyncPeriod = 30 * time.Second
 )
 
 // EventBroadcaster handles real-time event broadcasting
@@ -23,25 +31,35 @@ type EventBroadcaster struct {
 
 // ResourceEvent represents a change to a Kubernetes resource
 type ResourceEvent struct {
-	Type     string      `json:"type"`     // "add", "update", "delete"
-	Resource string      `json:"resource"` // "models", "runtimes", "services", etc.
-	Name     string      `json:"name"`
-	Data     interface{} `json:"data,omitempty"`
+	Type      string      `json:"type"`                // "add", "update", "delete"
+	Resource  string      `json:"resource"`            // "models", "runtimes", "services", etc.
+	Namespace string      `json:"namespace,omitempty"` // empty for cluster-scoped resources
+	Name      string      `json:"name"`                // "name", or "namespace/name" when namespaced
+	Data      interface{} `json:"data,omitempty"`
 }
 
 // Client wraps Kubernetes client functionality with informers
 type Client struct {
-	Clientset              *kubernetes.Clientset
+	Clientset              kubernetes.Interface
 	DynamicClient          dynamic.Interface
 	Config                 *rest.Config
 	Logger                 *zap.Logger
 	DynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
 	InformerFactory        informers.SharedInformerFactory
 	Broadcaster            *EventBroadcaster
-	stopCh                 chan struct{}
+	// Capabilities is what DiscoverCapabilities found. It is zero until discovery has run.
+	Capabilities Capabilities
+	// CacheSyncTimeout bounds how long StartInformers waits for the caches to fill. A missing
+	// CRD or a missing list/watch permission would otherwise make the wait last forever.
+	CacheSyncTimeout time.Duration
+
+	// registered holds the resources whose informers were created before StartInformers ran.
+	// It is written during SetupInformers and only read afterwards.
+	registered map[schema.GroupVersionResource]bool
+	stopCh     chan struct{}
 }
 
-// NewClient creates a new Kubernetes client
+// NewClient creates a new Kubernetes client from the kubeconfig or the in-cluster config.
 func NewClient(logger *zap.Logger) (*Client, error) {
 	var config *rest.Config
 	var err error
@@ -77,27 +95,25 @@ func NewClient(logger *zap.Logger) (*Client, error) {
 		return nil, err
 	}
 
-	// Create informer factories with 30 second resync period
-	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 30*time.Second)
-	informerFactory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
-
-	// Create event broadcaster
-	broadcaster := &EventBroadcaster{
-		listeners: make(map[chan ResourceEvent]struct{}),
-	}
-
 	logger.Info("Kubernetes client initialized successfully")
+	return NewClientWith(clientset, dynamicClient, config, logger), nil
+}
 
+// NewClientWith wires a Client around existing API clients. NewClient uses it for real clusters;
+// tests use it with the client-go fakes.
+func NewClientWith(clientset kubernetes.Interface, dynamicClient dynamic.Interface, config *rest.Config, logger *zap.Logger) *Client {
 	return &Client{
 		Clientset:              clientset,
 		DynamicClient:          dynamicClient,
 		Config:                 config,
 		Logger:                 logger,
-		DynamicInformerFactory: dynamicInformerFactory,
-		InformerFactory:        informerFactory,
-		Broadcaster:            broadcaster,
+		DynamicInformerFactory: dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, informerResyncPeriod),
+		InformerFactory:        informers.NewSharedInformerFactory(clientset, informerResyncPeriod),
+		Broadcaster:            NewEventBroadcaster(),
+		CacheSyncTimeout:       DefaultCacheSyncTimeout,
+		registered:             make(map[schema.GroupVersionResource]bool),
 		stopCh:                 make(chan struct{}),
-	}, nil
+	}
 }
 
 // NewEventBroadcaster creates a new event broadcaster
@@ -140,7 +156,9 @@ func (eb *EventBroadcaster) Broadcast(event ResourceEvent) {
 	}
 }
 
-// StartInformers starts all informers and waits for cache sync
+// StartInformers starts all registered informers and waits, up to CacheSyncTimeout, for their
+// caches to sync. A cache that does not sync in time fails startup with an error naming the
+// resource, which points at a missing CRD or a missing list/watch permission.
 func (c *Client) StartInformers() error {
 	c.Logger.Info("Starting Kubernetes informers...")
 
@@ -150,23 +168,30 @@ func (c *Client) StartInformers() error {
 	// Start standard informer factory for core resources
 	c.InformerFactory.Start(c.stopCh)
 
-	// Wait for all caches to sync
-	c.Logger.Info("Waiting for informer caches to sync...")
+	timeout := c.CacheSyncTimeout
+	if timeout <= 0 {
+		timeout = DefaultCacheSyncTimeout
+	}
+	c.Logger.Info("Waiting for informer caches to sync...", zap.Duration("timeout", timeout))
+
+	// WaitForCacheSync returns early when this channel closes, reporting the unsynced caches.
+	deadline := make(chan struct{})
+	timer := time.AfterFunc(timeout, func() { close(deadline) })
+	defer timer.Stop()
 
 	// Sync dynamic informers (CRDs)
-	for gvr, informer := range c.DynamicInformerFactory.WaitForCacheSync(c.stopCh) {
-		if !informer {
-			c.Logger.Error("Failed to sync cache for resource", zap.String("gvr", gvr.String()))
-			return fmt.Errorf("failed to sync cache for resource %s", gvr.String())
+	for gvr, synced := range c.DynamicInformerFactory.WaitForCacheSync(deadline) {
+		if !synced {
+			c.Logger.Error("Timed out waiting for cache to sync", zap.String("resource", gvr.Resource))
+			return fmt.Errorf("timed out after %s waiting for the %s cache to sync: check that the CRD is installed and that the console may list and watch it", timeout, gvr.Resource)
 		}
 	}
 
 	// Sync standard informers (core resources)
-	synced := c.InformerFactory.WaitForCacheSync(c.stopCh)
-	for informerType, isSynced := range synced {
-		if !isSynced {
-			c.Logger.Error("Failed to sync cache", zap.String("type", informerType.String()))
-			return fmt.Errorf("failed to sync cache for type %s", informerType.String())
+	for informerType, synced := range c.InformerFactory.WaitForCacheSync(deadline) {
+		if !synced {
+			c.Logger.Error("Timed out waiting for cache to sync", zap.String("type", informerType.String()))
+			return fmt.Errorf("timed out after %s waiting for the %s cache to sync: check that the console may list and watch it", timeout, informerType)
 		}
 	}
 
