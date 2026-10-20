@@ -20,7 +20,7 @@ var (
 // ListInferenceServices returns all InferenceServices in the specified namespace from cache
 // If namespace is empty, lists across all namespaces
 func (c *Client) ListInferenceServices(ctx context.Context, namespace string) (*unstructured.UnstructuredList, error) {
-	return c.listFromCache(InferenceServiceGVR, namespace)
+	return c.listFromCache(InferenceServiceGVR, namespace, nil)
 }
 
 // GetInferenceService returns a specific InferenceService by name and namespace from cache

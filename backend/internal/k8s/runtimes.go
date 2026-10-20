@@ -26,7 +26,7 @@ var (
 
 // ListClusterServingRuntimes returns all ClusterServingRuntimes in the cluster from cache
 func (c *Client) ListClusterServingRuntimes(ctx context.Context) (*unstructured.UnstructuredList, error) {
-	return c.listFromCache(ClusterServingRuntimeGVR, "")
+	return c.listFromCache(ClusterServingRuntimeGVR, "", nil)
 }
 
 // GetClusterServingRuntime returns a specific ClusterServingRuntime by name from cache
@@ -51,7 +51,7 @@ func (c *Client) DeleteClusterServingRuntime(ctx context.Context, name string) e
 
 // ListServingRuntimes returns all ServingRuntimes in a namespace from cache
 func (c *Client) ListServingRuntimes(ctx context.Context, namespace string) (*unstructured.UnstructuredList, error) {
-	return c.listFromCache(ServingRuntimeGVR, namespace)
+	return c.listFromCache(ServingRuntimeGVR, namespace, nil)
 }
 
 // GetServingRuntime returns a specific ServingRuntime by name and namespace from cache

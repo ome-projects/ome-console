@@ -120,7 +120,7 @@ func TestEventHandler_IgnoresResyncAndSurvivesTombstones(t *testing.T) {
 	events := c.Broadcaster.Subscribe()
 	defer c.Broadcaster.Unsubscribe(events)
 
-	handler := c.eventHandlerFor(coreInformers[0]) // ClusterBaseModel, cluster-scoped
+	handler := c.eventHandlerFor(ClusterBaseModelResource)
 	v1 := newObject("ClusterBaseModel", "", "llama", "1")
 	v2 := newObject("ClusterBaseModel", "", "llama", "2")
 

@@ -26,11 +26,7 @@ func (h *NamespacesHandler) List(c *gin.Context) {
 
 	namespaces, err := h.k8sClient.ListNamespaces(ctx)
 	if err != nil {
-		h.logger.Error("Failed to list namespaces", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to list namespaces",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to list namespaces", err)
 		return
 	}
 
@@ -53,11 +49,7 @@ func (h *NamespacesHandler) Get(c *gin.Context) {
 
 	namespace, err := h.k8sClient.GetNamespace(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get namespace", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Namespace not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Namespace not found", err)
 		return
 	}
 
