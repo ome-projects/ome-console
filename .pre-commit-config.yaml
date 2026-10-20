@@ -83,7 +83,7 @@ repos:
         description: Check frontend formatting with Prettier
         entry: bash -c 'cd frontend && npm run format:check'
         language: system
-        files: ^frontend/src/.*\.(ts|tsx|js|jsx|json|css)$
+        files: ^frontend/(src/.*\.(ts|tsx|js|jsx|json|css)|scripts/.*\.mjs)$
         pass_filenames: false
 
       - id: eslint
