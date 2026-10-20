@@ -191,6 +191,7 @@ make help
 | `KUBECONFIG` | `~/.kube/config` | Path to kubeconfig file |
 | `KUBERNETES_IN_CLUSTER` | `false` | Set to `true` when running in-cluster |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Comma-separated allowed origins |
+| `INFORMER_SYNC_TIMEOUT` | `60s` | How long startup waits for the Kubernetes caches to fill before failing (Go duration) |
 
 ### Frontend Environment Variables
 
@@ -304,6 +305,7 @@ GET /api/v1/huggingface/models/:id/config     # Get model config
 
 ### Other
 ```
+GET /api/v1/capabilities                 # OME resources and console features the cluster supports
 GET /api/v1/namespaces                   # List namespaces
 GET /api/v1/accelerators                 # List accelerators
 GET /api/v1/events                       # SSE stream for real-time updates
@@ -381,6 +383,23 @@ cat ~/.kube/config | head -20
 # 3. Verify OME CRDs are installed
 kubectl get crd | grep ome.io
 ```
+
+### Backend exits with "timed out ... waiting for the ... cache to sync"
+
+The backend lists and watches every OME resource it knows about. Startup fails, instead of hanging, when a cache cannot fill within `INFORMER_SYNC_TIMEOUT`. The error names the resource; the usual causes are a missing list/watch permission or a CRD that was removed after startup.
+
+```bash
+# 1. Can the console's identity list and watch the resource?
+kubectl auth can-i list inferenceservices.ome.io
+kubectl auth can-i watch inferenceservices.ome.io
+
+# 2. Slow or very large clusters: give the caches more time
+INFORMER_SYNC_TIMEOUT=180s make dev-backend
+```
+
+### A feature is missing from the console
+
+The console only enables features for OME resources the cluster serves. `GET /api/v1/capabilities` shows what was found at startup. Install the missing CRD (for example by upgrading OME) and restart the backend; discovery runs once at startup.
 
 ### Frontend can't reach backend
 

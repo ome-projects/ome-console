@@ -63,6 +63,10 @@ func (s *Server) SetupRoutes() *gin.Engine {
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 	{
+		// Which OME resources and console features the cluster supports
+		capabilitiesHandler := handlers.NewCapabilitiesHandler(s.k8sClient)
+		v1.GET("/capabilities", capabilitiesHandler.Get)
+
 		// ClusterBaseModel endpoints (cluster-scoped)
 		modelsHandler := handlers.NewModelsHandler(s.k8sClient, s.logger)
 		models := v1.Group("/models")
