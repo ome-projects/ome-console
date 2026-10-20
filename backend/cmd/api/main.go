@@ -58,9 +58,9 @@ func main() {
 		Handler:           router,
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
-		// WriteTimeout is 0 (no deadline): GET /api/v1/events streams SSE for the life of
-		// the connection, and a global write deadline would kill every stream after 15s.
-		WriteTimeout: 0,
+		// Bounds ordinary responses. The SSE stream at GET /api/v1/events outlives this; its
+		// handler renews the write deadline before every write instead (see handlers/events.go).
+		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

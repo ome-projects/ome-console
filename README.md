@@ -396,8 +396,9 @@ cat frontend/.env.local
 ```
 
 - The live-update stream at `GET /api/v1/events` is a long-lived Server-Sent Events
-  response. It must not sit behind a proxy that buffers responses or enforces a
-  response timeout (e.g. nginx `proxy_buffering`, `proxy_read_timeout`), or it will drop.
+  response. A proxy in front of it must not buffer responses (nginx: `proxy_buffering off`),
+  and its idle timeout must exceed the stream's 30-second keep-alive ping (nginx:
+  `proxy_read_timeout` is reset by each ping, so 60s or more is enough).
 
 ### Port already in use
 
