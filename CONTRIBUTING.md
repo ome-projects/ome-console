@@ -13,13 +13,25 @@ This document explains the contribution process. For environment setup, local de
 
 ```
 ome-console/
+├── api/ome/     # Pinned snapshot of the OME API contract (swagger.json + crd-meta.json); see api/ome/README.md
 ├── backend/     # Go backend-for-frontend (gin), module sigs.k8s.io/ome/ome-console/backend
 ├── frontend/    # Next.js 14 App Router, TypeScript
+├── hack/        # Maintenance scripts, e.g. sync-ome-api.sh
 ├── go.work      # Go workspace so tooling resolves the backend module from the repo root
 └── Makefile     # Orchestrates both; run `make help` to list targets
 ```
 
 The frontend never talks to the Kubernetes API directly — it calls the backend, which uses a `client-go` dynamic client. When adding a feature that reads or writes a new OME resource, you will usually touch both sides.
+
+### OME API snapshot
+
+The console takes no Go dependency on OME. Instead, `api/ome/` vendors a pinned snapshot of the OME API contract — the upstream `swagger.json` plus `crd-meta.json`, the enums, required lists, defaults, CEL rules and printer columns extracted from the CRDs — from the commit recorded in `api/ome/OME_VERSION`. To move to a newer OME commit:
+
+```bash
+make sync-ome-api OME_REF=<sha> OME_SRC=~/go/src/ome   # or omit OME_SRC to download from GitHub
+```
+
+Review the printed diff, then commit `api/ome/` together with the regenerated TypeScript types (once the generator exists) in one PR. The full CRD YAMLs are deliberately not vendored; see [api/ome/README.md](api/ome/README.md).
 
 ## Contributing Guidelines
 
