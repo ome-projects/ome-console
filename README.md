@@ -386,7 +386,7 @@ kubectl get crd | grep ome.io
 
 ### Backend exits with "timed out ... waiting for the ... cache to sync"
 
-The backend lists and watches every OME resource it knows about. Startup fails, instead of hanging, when a cache cannot fill within `INFORMER_SYNC_TIMEOUT`. The error names the resource; the usual causes are a missing list/watch permission or a CRD that was removed after startup.
+The backend lists and watches every OME resource it knows about. Startup fails, instead of hanging, when a cache cannot fill within `INFORMER_SYNC_TIMEOUT`. The error names the resource; the usual causes are a missing list/watch permission or a CRD that was removed after startup. The API discovery that runs first is bounded too (30 seconds per request), so an unreachable API server also fails startup promptly.
 
 ```bash
 # 1. Can the console's identity list and watch the resource?
