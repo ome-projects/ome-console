@@ -30,8 +30,30 @@ func main() {
 		logger.Fatal("Failed to create Kubernetes client", zap.Error(err))
 	}
 
+	// Find out which OME resources this cluster serves. Informers are only created for those,
+	// so a missing CRD disables a feature instead of blocking startup.
+	caps, err := k8sClient.DiscoverCapabilities(context.Background())
+	if err != nil {
+		logger.Fatal("Failed to discover OME API resources", zap.Error(err))
+	}
+	if !caps.OMEInstalled {
+		logger.Warn("OME API group not found on this cluster; OME features stay disabled until OME is installed and the console restarts",
+			zap.String("groupVersion", k8s.OMEGroupVersion))
+	}
+
 	// Setup informers with event handlers
-	k8sClient.SetupInformers()
+	if err := k8sClient.SetupInformers(); err != nil {
+		logger.Fatal("Failed to set up informers", zap.Error(err))
+	}
+
+	// Bound the wait for the informer caches so a missing permission fails loudly
+	if timeout := os.Getenv("INFORMER_SYNC_TIMEOUT"); timeout != "" {
+		d, err := time.ParseDuration(timeout)
+		if err != nil {
+			logger.Fatal("Invalid INFORMER_SYNC_TIMEOUT", zap.String("value", timeout), zap.Error(err))
+		}
+		k8sClient.CacheSyncTimeout = d
+	}
 
 	// Start informers and wait for cache sync before accepting requests
 	logger.Info("Starting informers and waiting for cache sync...")
