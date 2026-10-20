@@ -28,11 +28,7 @@ func (h *AcceleratorsHandler) List(c *gin.Context) {
 
 	accelerators, err := h.k8sClient.ListAcceleratorClasses(ctx)
 	if err != nil {
-		h.logger.Error("Failed to list accelerators", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to list accelerators",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to list accelerators", err)
 		return
 	}
 
@@ -49,11 +45,7 @@ func (h *AcceleratorsHandler) Get(c *gin.Context) {
 
 	accelerator, err := h.k8sClient.GetAcceleratorClass(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get accelerator", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Accelerator not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Accelerator not found", err)
 		return
 	}
 

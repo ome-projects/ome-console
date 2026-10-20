@@ -48,7 +48,7 @@ func (s *Server) SetupRoutes() *gin.Engine {
 	} else {
 		config.AllowOrigins = []string{"http://localhost:3000", "http://localhost:3001"}
 	}
-	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+	config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Type", "Authorization"}
 	router.Use(cors.New(config))
 
@@ -115,17 +115,12 @@ func (s *Server) SetupRoutes() *gin.Engine {
 			runtimes.DELETE("/:name", runtimesHandler.Delete)
 		}
 
-		// Inference Services endpoints
-		servicesHandler := handlers.NewServicesHandler(s.k8sClient, s.logger)
-		services := v1.Group("/services")
-		{
-			services.GET("", servicesHandler.List)
-			services.GET("/:name", servicesHandler.Get)
-			services.POST("", servicesHandler.Create)
-			services.PUT("/:name", servicesHandler.Update)
-			services.DELETE("/:name", servicesHandler.Delete)
-			services.GET("/:name/status", servicesHandler.GetStatus)
-		}
+		// Inference Services: /namespaces/:namespace/services[/:name] and, for lists across
+		// namespaces plus the ?namespace= form, /services[/:name]
+		handlers.NewResourceHandler(s.k8sClient, k8s.InferenceServiceResource, s.logger).Mount(v1, true)
+
+		// Namespace-scoped ServingRuntimes: /namespaces/:namespace/runtimes[/:name]
+		handlers.NewResourceHandler(s.k8sClient, k8s.ServingRuntimeResource, s.logger).Mount(v1, false)
 
 		// Accelerators endpoints
 		acceleratorsHandler := handlers.NewAcceleratorsHandler(s.k8sClient, s.logger)

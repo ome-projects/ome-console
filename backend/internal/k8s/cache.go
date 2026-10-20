@@ -26,10 +26,14 @@ func (c *Client) requireInformer(gvr schema.GroupVersionResource) error {
 }
 
 // listFromCache lists objects of a resource from its informer cache. An empty namespace lists
-// across all namespaces, and is the only valid value for cluster-scoped resources.
-func (c *Client) listFromCache(gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
+// across all namespaces, and is the only valid value for cluster-scoped resources. A nil
+// selector matches everything.
+func (c *Client) listFromCache(gvr schema.GroupVersionResource, namespace string, selector labels.Selector) (*unstructured.UnstructuredList, error) {
 	if err := c.requireInformer(gvr); err != nil {
 		return nil, err
+	}
+	if selector == nil {
+		selector = labels.Everything()
 	}
 
 	lister := c.DynamicInformerFactory.ForResource(gvr).Lister()
@@ -38,9 +42,9 @@ func (c *Client) listFromCache(gvr schema.GroupVersionResource, namespace string
 		err  error
 	)
 	if namespace == "" {
-		objs, err = lister.List(labels.Everything())
+		objs, err = lister.List(selector)
 	} else {
-		objs, err = lister.ByNamespace(namespace).List(labels.Everything())
+		objs, err = lister.ByNamespace(namespace).List(selector)
 	}
 	if err != nil {
 		return nil, err

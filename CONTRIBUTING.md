@@ -21,6 +21,8 @@ ome-console/
 
 The frontend never talks to the Kubernetes API directly — it calls the backend, which uses a `client-go` dynamic client. When adding a feature that reads or writes a new OME resource, you will usually touch both sides.
 
+To expose a new OME resource through the backend: add it to `KnownResources` in `backend/internal/k8s/registry.go` (plural name, kind, scope and the `key` used in URLs and SSE events), register its informer in `backend/internal/k8s/informers.go`, and mount a `handlers.NewResourceHandler(...)` for it in `backend/internal/api/server.go`. The generic handler provides list, get, create, update, patch, delete and status with the shared error mapping (`backend/internal/handlers/errors.go`); add a dedicated handler only for behaviour beyond CRUD. Resources the cluster does not serve are skipped at startup and reported by `GET /api/v1/capabilities`.
+
 ## Contributing Guidelines
 
 ### Coding Style Guide

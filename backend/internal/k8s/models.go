@@ -27,7 +27,7 @@ var (
 
 // ListClusterBaseModels returns all ClusterBaseModels in the cluster from cache
 func (c *Client) ListClusterBaseModels(ctx context.Context) (*unstructured.UnstructuredList, error) {
-	return c.listFromCache(ClusterBaseModelGVR, "")
+	return c.listFromCache(ClusterBaseModelGVR, "", nil)
 }
 
 // GetClusterBaseModel returns a specific ClusterBaseModel by name from cache
@@ -52,7 +52,7 @@ func (c *Client) DeleteClusterBaseModel(ctx context.Context, name string) error 
 
 // ListBaseModels returns all BaseModels in a namespace from cache
 func (c *Client) ListBaseModels(ctx context.Context, namespace string) (*unstructured.UnstructuredList, error) {
-	return c.listFromCache(BaseModelGVR, namespace)
+	return c.listFromCache(BaseModelGVR, namespace, nil)
 }
 
 // GetBaseModel returns a specific BaseModel by name and namespace from cache

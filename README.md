@@ -192,6 +192,7 @@ make help
 | `KUBERNETES_IN_CLUSTER` | `false` | Set to `true` when running in-cluster |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Comma-separated allowed origins |
 | `INFORMER_SYNC_TIMEOUT` | `60s` | How long startup waits for the Kubernetes caches to fill before failing (Go duration) |
+| `OME_FIELD_VALIDATION` | `Strict` | API server field validation for writes: `Strict` rejects undeclared fields, `Warn` or `Ignore` lets them be pruned |
 
 ### Frontend Environment Variables
 
@@ -274,7 +275,7 @@ DELETE /api/v1/namespaces/:ns/models/:name     # Delete BaseModel
 
 ### Runtimes
 ```
-GET    /api/v1/runtimes                  # List ClusterServingRuntimes
+GET    /api/v1/runtimes                  # List ClusterServingRuntimes (?namespace= lists ServingRuntimes instead)
 GET    /api/v1/runtimes/:name            # Get ClusterServingRuntime
 POST   /api/v1/runtimes                  # Create ClusterServingRuntime
 PUT    /api/v1/runtimes/:name            # Update ClusterServingRuntime
@@ -284,17 +285,60 @@ GET    /api/v1/runtimes/compatible       # Find compatible runtimes
 GET    /api/v1/runtimes/recommend        # Get runtime recommendation
 POST   /api/v1/runtimes/validate         # Validate runtime config
 GET    /api/v1/runtimes/fetch-yaml       # Fetch YAML from URL
+
+# Namespace-scoped ServingRuntimes
+GET    /api/v1/namespaces/:ns/runtimes           # List ServingRuntimes
+GET    /api/v1/namespaces/:ns/runtimes/:name     # Get ServingRuntime
+POST   /api/v1/namespaces/:ns/runtimes           # Create ServingRuntime
+PUT    /api/v1/namespaces/:ns/runtimes/:name     # Update ServingRuntime
+PATCH  /api/v1/namespaces/:ns/runtimes/:name     # Patch ServingRuntime
+DELETE /api/v1/namespaces/:ns/runtimes/:name     # Delete ServingRuntime
+GET    /api/v1/namespaces/:ns/runtimes/:name/status
 ```
 
 ### Services
 ```
-GET    /api/v1/services                  # List InferenceServices
-GET    /api/v1/services/:name            # Get InferenceService
-POST   /api/v1/services                  # Create InferenceService
-PUT    /api/v1/services/:name            # Update InferenceService
-DELETE /api/v1/services/:name            # Delete InferenceService
-GET    /api/v1/services/:name/status     # Get service status
+GET    /api/v1/services                          # List InferenceServices across namespaces (?namespace= to narrow)
+GET    /api/v1/namespaces/:ns/services           # List InferenceServices in a namespace
+GET    /api/v1/namespaces/:ns/services/:name     # Get InferenceService
+POST   /api/v1/namespaces/:ns/services           # Create InferenceService
+PUT    /api/v1/namespaces/:ns/services/:name     # Update InferenceService (body carries resourceVersion)
+PATCH  /api/v1/namespaces/:ns/services/:name     # Patch InferenceService
+DELETE /api/v1/namespaces/:ns/services/:name     # Delete InferenceService
+GET    /api/v1/namespaces/:ns/services/:name/status
 ```
+
+The single-object service routes also answer at `/api/v1/services/:name?namespace=<ns>`; a namespaced resource without a namespace is a `400`.
+
+### Writes: dry run, field validation, patches
+
+- `?dryRun=true` on `POST`, `PUT` and `PATCH` runs admission and validation on the API server without persisting anything, and returns the object as it would be stored.
+- Writes use the API server's `Strict` field validation by default (`OME_FIELD_VALIDATION`), so a field the installed OME CRD does not declare is rejected with a `422` naming the field instead of being dropped silently.
+- `PATCH` accepts `application/json-patch+json`, `application/merge-patch+json` or `application/strategic-merge-patch+json`. With `application/json`, an array body is a JSON patch and an object body is a merge patch.
+
+### Errors
+
+Every error response has the same body:
+
+```json
+{
+  "error": "Failed to create InferenceService",
+  "code": "INVALID",
+  "message": "InferenceService.ome.io \"llama\" is invalid: spec.engine: Required value",
+  "details": [{ "field": "spec.engine", "reason": "FieldValueRequired", "message": "Required value" }]
+}
+```
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `BAD_REQUEST` | Unparsable body, missing namespace, name or kind mismatch |
+| 401 / 403 | `UNAUTHORIZED` / `FORBIDDEN` | The console's Kubernetes identity may not perform the action |
+| 404 | `NOT_FOUND` | The object does not exist |
+| 404 | `CAPABILITY_MISSING` | The cluster does not serve that OME resource (see `GET /api/v1/capabilities`) |
+| 409 | `CONFLICT` / `ALREADY_EXISTS` | Stale `resourceVersion` on update, or the name is taken |
+| 422 | `INVALID` | CRD schema, CEL rule or OME webhook rejected the object; `details` lists the causes |
+| 503 | `UNAVAILABLE` | The API server timed out or is unavailable |
+| 500 | `INTERNAL` | Anything else |
 
 ### HuggingFace Integration
 ```

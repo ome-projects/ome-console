@@ -5,28 +5,18 @@ import (
 
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
 )
 
-// informerSpec ties an OME resource to the SSE resource key the frontend listens on.
-type informerSpec struct {
-	gvr  schema.GroupVersionResource
-	kind string
-	// key is the ResourceEvent.Resource value. The cluster- and namespace-scoped variants of a
-	// kind share one key, which is what the frontend invalidates on.
-	key        string
-	namespaced bool
-}
-
-// coreInformers are the resources the console watches today.
-var coreInformers = []informerSpec{
-	{gvr: ClusterBaseModelGVR, kind: "ClusterBaseModel", key: "models"},
-	{gvr: BaseModelGVR, kind: "BaseModel", key: "models", namespaced: true},
-	{gvr: ClusterServingRuntimeGVR, kind: "ClusterServingRuntime", key: "runtimes"},
-	{gvr: ServingRuntimeGVR, kind: "ServingRuntime", key: "runtimes", namespaced: true},
-	{gvr: InferenceServiceGVR, kind: "InferenceService", key: "services", namespaced: true},
-	{gvr: AcceleratorClassGVR, kind: "AcceleratorClass", key: "accelerators"},
+// coreInformers are the resources the console watches today. The SSE key comes from the
+// registry, so the cluster- and namespace-scoped variants of a kind share one key.
+var coreInformers = []OMEResource{
+	ClusterBaseModelResource,
+	BaseModelResource,
+	ClusterServingRuntimeResource,
+	ServingRuntimeResource,
+	InferenceServiceResource,
+	AcceleratorClassResource,
 }
 
 // SetupInformers registers an informer for every core OME resource the cluster serves, plus the
@@ -38,14 +28,14 @@ func (c *Client) SetupInformers() error {
 	}
 
 	c.Logger.Info("Setting up informers with event handlers...")
-	for _, spec := range coreInformers {
-		if !c.Capabilities.Supports(spec.gvr.Resource) {
+	for _, res := range coreInformers {
+		if !c.Capabilities.Supports(res.Resource) {
 			c.Logger.Warn("OME resource is not served by this cluster; features that need it are disabled",
-				zap.String("kind", spec.kind),
-				zap.String("resource", spec.gvr.Resource))
+				zap.String("kind", res.Kind),
+				zap.String("resource", res.Resource))
 			continue
 		}
-		c.registerInformer(spec)
+		c.registerInformer(res)
 	}
 	c.setupNamespaceInformer()
 	c.Logger.Info("Informers setup completed")
@@ -53,20 +43,20 @@ func (c *Client) SetupInformers() error {
 }
 
 // registerInformer creates the informer for a resource and records that it will be started.
-func (c *Client) registerInformer(spec informerSpec) {
-	informer := c.DynamicInformerFactory.ForResource(spec.gvr).Informer()
-	if _, err := informer.AddEventHandler(c.eventHandlerFor(spec)); err != nil {
-		c.Logger.Error("Failed to add event handler", zap.String("kind", spec.kind), zap.Error(err))
+func (c *Client) registerInformer(res OMEResource) {
+	informer := c.DynamicInformerFactory.ForResource(res.GVR()).Informer()
+	if _, err := informer.AddEventHandler(c.eventHandlerFor(res)); err != nil {
+		c.Logger.Error("Failed to add event handler", zap.String("kind", res.Kind), zap.Error(err))
 	}
-	c.registered[spec.gvr] = true
+	c.registered[res.GVR()] = true
 }
 
 // eventHandlerFor builds the handler that turns informer callbacks into ResourceEvents.
-func (c *Client) eventHandlerFor(spec informerSpec) cache.ResourceEventHandlerFuncs {
+func (c *Client) eventHandlerFor(res OMEResource) cache.ResourceEventHandlerFuncs {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if u, ok := asUnstructured(obj); ok {
-				c.broadcast("add", spec, u, true)
+				c.broadcast("add", res, u, true)
 			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
@@ -79,11 +69,11 @@ func (c *Client) eventHandlerFor(spec informerSpec) cache.ResourceEventHandlerFu
 			if old, ok := asUnstructured(oldObj); ok && old.GetResourceVersion() == u.GetResourceVersion() {
 				return
 			}
-			c.broadcast("update", spec, u, true)
+			c.broadcast("update", res, u, true)
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u, ok := asUnstructured(obj); ok {
-				c.broadcast("delete", spec, u, false)
+				c.broadcast("delete", res, u, false)
 			}
 		},
 	}
@@ -100,19 +90,19 @@ func asUnstructured(obj interface{}) (*unstructured.Unstructured, bool) {
 }
 
 // broadcast publishes a ResourceEvent for the object to every SSE subscriber.
-func (c *Client) broadcast(eventType string, spec informerSpec, u *unstructured.Unstructured, includeData bool) {
+func (c *Client) broadcast(eventType string, res OMEResource, u *unstructured.Unstructured, includeData bool) {
 	name := u.GetName()
-	if spec.namespaced {
+	if res.Namespaced {
 		name = u.GetNamespace() + "/" + name
 	}
 	c.Logger.Debug("Resource event",
 		zap.String("type", eventType),
-		zap.String("kind", spec.kind),
+		zap.String("kind", res.Kind),
 		zap.String("name", name))
 
 	event := ResourceEvent{
 		Type:      eventType,
-		Resource:  spec.key,
+		Resource:  res.Key,
 		Namespace: u.GetNamespace(),
 		Name:      name,
 	}
