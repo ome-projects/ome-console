@@ -23,7 +23,13 @@ export interface ModelProgressResponse {
   total: number
 }
 
-// ClusterBaseModel API (cluster-scoped)
+/** `/models/<name>` for a ClusterBaseModel, `/namespaces/<ns>/models/<name>` for a BaseModel. */
+const modelPath = (name: string, namespace?: string) =>
+  namespace
+    ? `/namespaces/${encodeURIComponent(namespace)}/models/${encodeURIComponent(name)}`
+    : `/models/${encodeURIComponent(name)}`
+
+// ClusterBaseModel API (cluster-scoped), plus namespaced BaseModel access via `namespace`
 export const modelsApi = {
   list: async (namespace?: string): Promise<ListResponse<ClusterBaseModel>> => {
     const params = namespace ? { namespace } : {}
@@ -31,8 +37,9 @@ export const modelsApi = {
     return response.data
   },
 
-  get: async (name: string): Promise<ClusterBaseModel> => {
-    const response = await apiClient.get<ClusterBaseModel>(`/models/${name}`)
+  /** A ClusterBaseModel, or the BaseModel `name` in `namespace` when one is given. */
+  get: async (name: string, namespace?: string): Promise<ClusterBaseModel> => {
+    const response = await apiClient.get<ClusterBaseModel>(modelPath(name, namespace))
     return response.data
   },
 
@@ -44,13 +51,17 @@ export const modelsApi = {
     return response.data
   },
 
-  update: async (name: string, model: Partial<ClusterBaseModel>): Promise<ClusterBaseModel> => {
-    const response = await apiClient.put<ClusterBaseModel>(`/models/${name}`, model)
+  update: async (
+    name: string,
+    model: Partial<ClusterBaseModel>,
+    namespace?: string
+  ): Promise<ClusterBaseModel> => {
+    const response = await apiClient.put<ClusterBaseModel>(modelPath(name, namespace), model)
     return response.data
   },
 
-  delete: async (name: string): Promise<void> => {
-    await apiClient.delete(`/models/${name}`)
+  delete: async (name: string, namespace?: string): Promise<void> => {
+    await apiClient.delete(modelPath(name, namespace))
   },
 
   getStatus: async (name: string): Promise<unknown> => {

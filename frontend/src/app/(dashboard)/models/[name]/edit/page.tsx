@@ -1,7 +1,9 @@
 'use client'
 
 import { useModel, useUpdateModel } from '@/lib/hooks/useModels'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useResourceRef } from '@/lib/hooks/useResourceRef'
+import { withNamespace } from '@/lib/utils'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { useState, useEffect } from 'react'
@@ -92,10 +94,9 @@ function KeyValueEditor({
 }
 
 export default function EditModelPage() {
-  const params = useParams()
+  const { name, namespace } = useResourceRef()
   const router = useRouter()
-  const name = params.name as string
-  const { data: model, isLoading, error } = useModel(name)
+  const { data: model, isLoading, error } = useModel(name, namespace)
   const updateModel = useUpdateModel()
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -186,8 +187,8 @@ export default function EditModelPage() {
         },
       }
 
-      await updateModel.mutateAsync({ name, model: updatedModel })
-      router.push(`/models/${name}`)
+      await updateModel.mutateAsync({ name, namespace, model: updatedModel })
+      router.push(withNamespace(`/models/${name}`, namespace))
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update model')
     }
@@ -211,7 +212,7 @@ export default function EditModelPage() {
       <header className="border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
           <Link
-            href={`/models/${name}`}
+            href={withNamespace(`/models/${name}`, namespace)}
             className="text-sm text-primary hover:text-primary/80 mb-2 inline-block"
           >
             ← Back to Model Details
@@ -423,7 +424,7 @@ export default function EditModelPage() {
             {/* Cancel and Submit - Right side */}
             <div className="flex gap-4">
               <Link
-                href={`/models/${name}`}
+                href={withNamespace(`/models/${name}`, namespace)}
                 className="rounded-lg border border-border bg-card px-6 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
               >
                 Cancel
