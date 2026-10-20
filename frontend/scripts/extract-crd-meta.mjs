@@ -149,11 +149,17 @@ function walk(schema, at, meta) {
   }
 }
 
+// The allowed values of a schema: its own `enum` intersected with every `enum` that an
+// `allOf` branch adds (controller-gen emits one branch per Enum marker). Order follows the
+// first list that applies, so values stay in CRD order.
 function enumValues(schema) {
-  if (Array.isArray(schema.enum)) return [...schema.enum]
-  const repeated = (schema.allOf ?? []).filter((branch) => Array.isArray(branch.enum))
-  if (repeated.length === 0) return null
-  return repeated[0].enum.filter((value) => repeated.every((branch) => branch.enum.includes(value)))
+  const lists = []
+  if (Array.isArray(schema.enum)) lists.push(schema.enum)
+  for (const branch of schema.allOf ?? []) {
+    if (Array.isArray(branch.enum)) lists.push(branch.enum)
+  }
+  if (lists.length === 0) return null
+  return lists[0].filter((value) => lists.every((list) => list.includes(value)))
 }
 
 function checkBranches(schema, at) {
