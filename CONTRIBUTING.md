@@ -13,8 +13,10 @@ This document explains the contribution process. For environment setup, local de
 
 ```
 ome-console/
+├── api/ome/     # Pinned snapshot of the OME API contract (swagger.json + crd-meta.json); see api/ome/README.md
 ├── backend/     # Go backend-for-frontend (gin), module sigs.k8s.io/ome/ome-console/backend
 ├── frontend/    # Next.js 14 App Router, TypeScript
+├── hack/        # Maintenance scripts, e.g. sync-ome-api.sh
 ├── go.work      # Go workspace so tooling resolves the backend module from the repo root
 └── Makefile     # Orchestrates both; run `make help` to list targets
 ```
@@ -24,6 +26,16 @@ The frontend never talks to the Kubernetes API directly — it calls the backend
 To expose a new OME resource through the backend: add it to `KnownResources` in `backend/internal/k8s/registry.go` (plural name, kind, scope and the `key` used in URLs and SSE events), register its informer in `backend/internal/k8s/informers.go`, and mount a `handlers.NewResourceHandler(...)` for it in `backend/internal/api/server.go`. The generic handler provides list, get, create, update, patch, delete and status with the shared error mapping (`backend/internal/handlers/errors.go`); add a dedicated handler only for behaviour beyond CRUD. Resources the cluster does not serve are skipped at startup and reported by `GET /api/v1/capabilities`.
 
 On the frontend, `createResourceApi` (`frontend/src/lib/api/createResourceApi.ts`) builds the client for a resource key and `createResourceHooks` (`frontend/src/lib/hooks/createResourceHooks.ts`) turns it into React Query hooks; both take the namespace as an argument, and links to namespaced objects carry it as `?namespace=` (`resourceHref` in `frontend/src/lib/utils/links.ts`, read back with `useResourceRef`). Wrap pages for optional resources in `CapabilityGate` and give their sidebar entry a `capability`, so clusters without that CRD hide the feature instead of showing errors. Live updates arrive through one `ServerEventsBridge` in the dashboard layout, which invalidates the React Query key named by each event; pages do not subscribe on their own.
+
+### OME API snapshot
+
+The console takes no Go dependency on OME. Instead, `api/ome/` vendors a pinned snapshot of the OME API contract — the upstream `swagger.json` plus `crd-meta.json`, the enums, required lists, defaults, CEL rules and printer columns extracted from the CRDs — from the commit recorded in `api/ome/OME_VERSION`. To move to a newer OME commit:
+
+```bash
+make sync-ome-api OME_REF=<sha> OME_SRC=~/go/src/ome   # or omit OME_SRC to download from GitHub
+```
+
+Review the printed diff, then commit `api/ome/` together with the regenerated TypeScript types (once the generator exists) in one PR. The full CRD YAMLs are deliberately not vendored; see [api/ome/README.md](api/ome/README.md).
 
 ## Contributing Guidelines
 
