@@ -54,10 +54,13 @@ func main() {
 
 	// Create HTTP server
 	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:              ":" + port,
+		Handler:           router,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		// WriteTimeout is 0 (no deadline): GET /api/v1/events streams SSE for the life of
+		// the connection, and a global write deadline would kill every stream after 15s.
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 

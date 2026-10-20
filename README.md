@@ -395,6 +395,10 @@ curl http://localhost:8080/health
 cat frontend/.env.local
 ```
 
+- The live-update stream at `GET /api/v1/events` is a long-lived Server-Sent Events
+  response. It must not sit behind a proxy that buffers responses or enforces a
+  response timeout (e.g. nginx `proxy_buffering`, `proxy_read_timeout`), or it will drop.
+
 ### Port already in use
 
 ```bash
