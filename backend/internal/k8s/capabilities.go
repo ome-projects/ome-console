@@ -74,7 +74,8 @@ func (caps Capabilities) Supports(resource string) bool {
 
 // DiscoverCapabilities asks the API server which OME resources it serves and records the result
 // on the client. A cluster without the ome.io/v1beta1 group is reported as OMEInstalled=false
-// rather than as an error, so the console can still start and explain what is missing.
+// rather than as an error, so the console can still start and explain what is missing. The
+// request is bounded by the discovery client's timeout (DiscoveryTimeout for a real cluster).
 func (c *Client) DiscoverCapabilities(ctx context.Context) (Capabilities, error) {
 	caps := Capabilities{
 		Resources: make(map[string]bool, len(KnownResources)),
@@ -87,7 +88,7 @@ func (c *Client) DiscoverCapabilities(ctx context.Context) (Capabilities, error)
 	// The discovery client does not take a context in this client-go version; the parameter
 	// keeps the signature stable for callers.
 	_ = ctx
-	list, err := c.Clientset.Discovery().ServerResourcesForGroupVersion(OMEGroupVersion)
+	list, err := c.Discovery.ServerResourcesForGroupVersion(OMEGroupVersion)
 	switch {
 	case err == nil:
 		caps.OMEInstalled = true
