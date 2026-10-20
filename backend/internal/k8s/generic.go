@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -129,25 +130,26 @@ func (c *Client) Patch(ctx context.Context, res OMEResource, namespace, name str
 	}, subresources...)
 }
 
-// prepareObject stamps apiVersion and kind and checks the namespace before a write.
+// prepareObject stamps apiVersion and kind and checks the namespace before a write. A failed
+// check is the caller's mistake, so it is a BadRequest and handlers answer 400.
 func (c *Client) prepareObject(res OMEResource, namespace string, obj *unstructured.Unstructured) error {
 	if obj == nil || obj.Object == nil {
-		return fmt.Errorf("%s: object is required", res.Kind)
+		return apierrors.NewBadRequest(fmt.Sprintf("%s: object is required", res.Kind))
 	}
 	obj.SetAPIVersion(OMEGroupVersion)
 	obj.SetKind(res.Kind)
 
 	if !res.Namespaced {
 		if ns := obj.GetNamespace(); ns != "" {
-			return fmt.Errorf("%s is cluster-scoped but metadata.namespace is %q", res.Kind, ns)
+			return apierrors.NewBadRequest(fmt.Sprintf("%s is cluster-scoped but metadata.namespace is %q", res.Kind, ns))
 		}
 		return nil
 	}
 	if namespace == "" {
-		return fmt.Errorf("%s is namespaced: a namespace is required", res.Kind)
+		return apierrors.NewBadRequest(fmt.Sprintf("%s is namespaced: a namespace is required", res.Kind))
 	}
 	if ns := obj.GetNamespace(); ns != "" && ns != namespace {
-		return fmt.Errorf("metadata.namespace %q does not match the request namespace %q", ns, namespace)
+		return apierrors.NewBadRequest(fmt.Sprintf("metadata.namespace %q does not match the request namespace %q", ns, namespace))
 	}
 	obj.SetNamespace(namespace)
 	return nil
