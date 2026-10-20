@@ -356,6 +356,13 @@ POST /api/v1/validate/runtime            # Validate runtime resource
 | `make test-backend` | Run backend tests |
 | `make test-frontend` | Run frontend tests |
 
+### OME API snapshot
+| Command | Description |
+|---------|-------------|
+| `make sync-ome-api OME_REF=<sha> [OME_SRC=<checkout>]` | Re-sync `api/ome/` from an OME commit |
+| `make gen-types` | Regenerate the frontend's OME types from `api/ome/` |
+| `make verify-ome-api` | Check the generated types are current (CI) |
+
 ### Utilities
 | Command | Description |
 |---------|-------------|

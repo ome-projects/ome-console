@@ -3,7 +3,7 @@
 
 .PHONY: help dev dev-frontend dev-backend build build-frontend build-backend \
         run-backend start-frontend install install-frontend install-backend \
-        clean lint test test-backend test-frontend sync-ome-api
+        clean lint test test-backend test-frontend sync-ome-api gen-types verify-ome-api
 
 # Colors for terminal output
 CYAN := \033[36m
@@ -138,6 +138,12 @@ status: check-backend check-frontend ## Check status of both services
 
 sync-ome-api: ## Re-sync api/ome/ from OME (OME_REF=<sha|tag>, optional OME_SRC=<local checkout>)
 	@OME_REF="$(OME_REF)" OME_SRC="$(OME_SRC)" hack/sync-ome-api.sh
+
+gen-types: ## Generate frontend TypeScript types from api/ome/
+	@cd frontend && npm run gen:types
+
+verify-ome-api: ## Check that the generated types match api/ome/ (CI)
+	@cd frontend && npm run gen:types:check
 
 ##@ Help
 
