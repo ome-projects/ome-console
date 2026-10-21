@@ -4,8 +4,28 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { clsx } from 'clsx'
+import { useCapabilities, isCapabilityAvailable } from '@/lib/hooks/useCapabilities'
+import type { Capabilities } from '@/lib/api/capabilities'
 
-const navigation = [
+export interface NavigationItem {
+  name: string
+  href: string
+  icon: React.ReactNode
+  /** OME resource (plural name) the page needs; the entry is hidden when the cluster lacks it. */
+  capability?: string
+}
+
+/** The entries to show for a cluster: everything whose capability the cluster has. */
+export function visibleNavigation(
+  items: NavigationItem[],
+  capabilities: Capabilities | undefined
+): NavigationItem[] {
+  return items.filter(
+    (item) => !item.capability || isCapabilityAvailable(capabilities, { resource: item.capability })
+  )
+}
+
+export const navigation: NavigationItem[] = [
   {
     name: 'Dashboard',
     href: '/dashboard',
@@ -105,6 +125,8 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { data: capabilities } = useCapabilities()
+  const items = visibleNavigation(navigation, capabilities)
 
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar">
@@ -127,7 +149,7 @@ export function Sidebar() {
             Navigation
           </p>
         </div>
-        {navigation.map((item) => {
+        {items.map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== '/dashboard' && pathname.startsWith(item.href + '/')) ||

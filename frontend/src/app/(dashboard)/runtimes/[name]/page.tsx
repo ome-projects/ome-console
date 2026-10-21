@@ -1,7 +1,9 @@
 'use client'
 
 import { useRuntime, useDeleteRuntime } from '@/lib/hooks/useRuntimes'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useResourceRef } from '@/lib/hooks/useResourceRef'
+import { withNamespace } from '@/lib/utils'
 import Link from 'next/link'
 import { useState } from 'react'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
@@ -50,16 +52,15 @@ function ResourceDisplay({ resources }: { resources: any }) {
 }
 
 export default function RuntimeDetailPage() {
-  const params = useParams()
+  const { name, namespace } = useResourceRef()
   const router = useRouter()
-  const name = params.name as string
-  const { data: runtime, isLoading, error } = useRuntime(name)
+  const { data: runtime, isLoading, error } = useRuntime(name, namespace)
   const deleteRuntime = useDeleteRuntime()
   const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   const handleDelete = async () => {
     try {
-      await deleteRuntime.mutateAsync(name)
+      await deleteRuntime.mutateAsync({ name, namespace })
       router.push('/runtimes')
     } catch (err) {
       console.error('Failed to delete runtime:', err)
@@ -110,13 +111,13 @@ export default function RuntimeDetailPage() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => router.push(`/runtimes/${name}/clone`)}
+                onClick={() => router.push(withNamespace(`/runtimes/${name}/clone`, namespace))}
                 className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
               >
                 Clone
               </button>
               <button
-                onClick={() => router.push(`/runtimes/${name}/edit`)}
+                onClick={() => router.push(withNamespace(`/runtimes/${name}/edit`, namespace))}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
               >
                 Edit Runtime

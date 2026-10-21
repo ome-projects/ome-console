@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -23,25 +24,25 @@ func TestPrepareObject(t *testing.T) {
 	})
 	t.Run("rejects a namespace mismatch", func(t *testing.T) {
 		obj := newObject("InferenceService", "team-b", "x", "")
-		if err := c.prepareObject(InferenceServiceResource, "team-a", obj); err == nil {
-			t.Fatal("expected an error")
+		if err := c.prepareObject(InferenceServiceResource, "team-a", obj); !apierrors.IsBadRequest(err) {
+			t.Fatalf("expected a BadRequest, got %v", err)
 		}
 	})
 	t.Run("rejects a missing namespace", func(t *testing.T) {
 		obj := newObject("InferenceService", "", "x", "")
-		if err := c.prepareObject(InferenceServiceResource, "", obj); err == nil {
-			t.Fatal("expected an error")
+		if err := c.prepareObject(InferenceServiceResource, "", obj); !apierrors.IsBadRequest(err) {
+			t.Fatalf("expected a BadRequest, got %v", err)
 		}
 	})
 	t.Run("rejects a namespace on a cluster-scoped kind", func(t *testing.T) {
 		obj := newObject("ClusterBaseModel", "team-a", "x", "")
-		if err := c.prepareObject(ClusterBaseModelResource, "", obj); err == nil {
-			t.Fatal("expected an error")
+		if err := c.prepareObject(ClusterBaseModelResource, "", obj); !apierrors.IsBadRequest(err) {
+			t.Fatalf("expected a BadRequest, got %v", err)
 		}
 	})
 	t.Run("rejects a nil object", func(t *testing.T) {
-		if err := c.prepareObject(ClusterBaseModelResource, "", nil); err == nil {
-			t.Fatal("expected an error")
+		if err := c.prepareObject(ClusterBaseModelResource, "", nil); !apierrors.IsBadRequest(err) {
+			t.Fatalf("expected a BadRequest, got %v", err)
 		}
 	})
 }

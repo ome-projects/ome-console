@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { modelsApi, ModelEventsResponse, ModelProgressResponse } from '../api/models'
 import { ClusterBaseModel } from '../types/model'
-import { DEFAULT_QUERY_CONFIG, queryKeys } from './createResourceHooks'
+import { DEFAULT_QUERY_CONFIG, queryKeys, type ResourceRef } from './createResourceHooks'
 
 /**
  * Models hooks are intentionally NOT using createResourceHooks factory because:
@@ -28,10 +28,11 @@ export function useModels(namespace?: string) {
   })
 }
 
-export function useModel(name: string) {
+/** One model; pass the namespace for a BaseModel. */
+export function useModel(name: string, namespace?: string) {
   return useQuery({
-    queryKey: queryKeys.detail(RESOURCE_KEY, name),
-    queryFn: () => modelsApi.get(name),
+    queryKey: queryKeys.detail(RESOURCE_KEY, name, namespace),
+    queryFn: () => modelsApi.get(name, namespace),
     enabled: !!name,
     staleTime: DEFAULT_QUERY_CONFIG.staleTime,
     gcTime: DEFAULT_QUERY_CONFIG.gcTime,
@@ -56,8 +57,15 @@ export function useUpdateModel() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ name, model }: { name: string; model: Partial<ClusterBaseModel> }) =>
-      modelsApi.update(name, model),
+    mutationFn: ({
+      name,
+      namespace,
+      model,
+    }: {
+      name: string
+      namespace?: string
+      model: Partial<ClusterBaseModel>
+    }) => modelsApi.update(name, model, namespace),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.all(RESOURCE_KEY) })
     },
@@ -68,7 +76,7 @@ export function useDeleteModel() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (name: string) => modelsApi.delete(name),
+    mutationFn: ({ name, namespace }: ResourceRef) => modelsApi.delete(name, namespace),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.all(RESOURCE_KEY) })
     },

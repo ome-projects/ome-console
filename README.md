@@ -331,7 +331,7 @@ Every error response has the same body:
 
 | Status | Code | When |
 |--------|------|------|
-| 400 | `BAD_REQUEST` | Unparsable body, missing namespace, name or kind mismatch |
+| 400 | `BAD_REQUEST` | Unparsable body, missing namespace, name, kind or namespace mismatch, or a namespace on a cluster-scoped kind |
 | 401 / 403 | `UNAUTHORIZED` / `FORBIDDEN` | The console's Kubernetes identity may not perform the action |
 | 404 | `NOT_FOUND` | The object does not exist |
 | 404 | `CAPABILITY_MISSING` | The cluster does not serve that OME resource (see `GET /api/v1/capabilities`) |

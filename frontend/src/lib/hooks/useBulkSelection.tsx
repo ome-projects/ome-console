@@ -1,28 +1,33 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { exportAsYaml } from '@/lib/utils'
+import { exportAsYaml, resourceEditHref, resourceKey } from '@/lib/utils'
 import { Icons } from '@/components/ui/Icons'
 import type { BulkAction } from '@/components/ui/BulkActionDropdown'
+import type { ResourceRef } from '@/lib/api/createResourceApi'
 
 interface ResourceWithMetadata {
-  metadata: { name: string }
+  metadata: { name: string; namespace?: string }
 }
 
 interface UseBulkSelectionOptions<T extends ResourceWithMetadata> {
   items: T[]
   resourceType: string
   basePath: string
-  deleteMutation: { mutateAsync: (name: string) => Promise<unknown> }
+  deleteMutation: { mutateAsync: (ref: ResourceRef) => Promise<unknown> }
+  /** Link to an item's edit page; defaults to `<basePath>/<name>/edit?namespace=<ns>`. */
+  editHref?: (item: T) => string
 }
 
 /**
- * Hook for managing bulk selection and actions in resource list pages.
+ * Hook for managing bulk selection and actions in resource list pages. Items are tracked by
+ * `resourceKey` (namespace/name), so same-named objects in different namespaces stay distinct.
  */
 export function useBulkSelection<T extends ResourceWithMetadata>({
   items,
   resourceType,
   basePath,
   deleteMutation,
+  editHref = (item) => resourceEditHref(basePath, item),
 }: UseBulkSelectionOptions<T>) {
   const router = useRouter()
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
@@ -31,9 +36,9 @@ export function useBulkSelection<T extends ResourceWithMetadata>({
 
   // Prune selection when items change (namespace filter, data refresh)
   useEffect(() => {
-    const currentNames = new Set(items.map((item) => item.metadata.name))
+    const currentKeys = new Set(items.map(resourceKey))
     setSelectedItems((prev) => {
-      const pruned = new Set([...prev].filter((name) => currentNames.has(name)))
+      const pruned = new Set([...prev].filter((key) => currentKeys.has(key)))
       return pruned.size !== prev.size ? pruned : prev
     })
   }, [items])
@@ -43,24 +48,32 @@ export function useBulkSelection<T extends ResourceWithMetadata>({
 
   const handleSelectAll = useCallback(
     (checked: boolean) => {
-      setSelectedItems(checked ? new Set(items.map((item) => item.metadata.name)) : new Set())
+      setSelectedItems(checked ? new Set(items.map(resourceKey)) : new Set())
     },
     [items]
   )
 
-  const handleSelectItem = useCallback((name: string, checked: boolean) => {
+  const handleSelectItem = useCallback((key: string, checked: boolean) => {
     setSelectedItems((prev) => {
       const next = new Set(prev)
-      checked ? next.add(name) : next.delete(name)
+      checked ? next.add(key) : next.delete(key)
       return next
     })
   }, [])
 
+  const selectedData = useMemo(
+    () => items.filter((item) => selectedItems.has(resourceKey(item))),
+    [items, selectedItems]
+  )
+
   const handleBulkDelete = useCallback(async () => {
     setIsDeleting(true)
     try {
-      for (const name of selectedItems) {
-        await deleteMutation.mutateAsync(name)
+      for (const item of selectedData) {
+        await deleteMutation.mutateAsync({
+          name: item.metadata.name,
+          namespace: item.metadata.namespace,
+        })
       }
       setSelectedItems(new Set())
       setShowDeleteModal(false)
@@ -69,11 +82,10 @@ export function useBulkSelection<T extends ResourceWithMetadata>({
     } finally {
       setIsDeleting(false)
     }
-  }, [selectedItems, deleteMutation, resourceType])
+  }, [selectedData, deleteMutation, resourceType])
 
-  const bulkActions: BulkAction[] = useMemo(() => {
-    const selectedData = items.filter((item) => selectedItems.has(item.metadata.name))
-    return [
+  const bulkActions: BulkAction[] = useMemo(
+    () => [
       {
         id: 'export',
         label: 'Export YAML',
@@ -87,8 +99,8 @@ export function useBulkSelection<T extends ResourceWithMetadata>({
         label: 'Edit',
         icon: <Icons.pencil size="sm" />,
         onClick: () => {
-          if (selectedItems.size === 1) {
-            router.push(`${basePath}/${[...selectedItems][0]}/edit`)
+          if (selectedData.length === 1) {
+            router.push(editHref(selectedData[0]))
           }
         },
         disabled: selectedItems.size !== 1,
@@ -101,11 +113,14 @@ export function useBulkSelection<T extends ResourceWithMetadata>({
         disabled: selectedItems.size === 0,
         variant: 'destructive',
       },
-    ]
-  }, [items, selectedItems, basePath, router])
+    ],
+    [selectedData, selectedItems.size, editHref, router]
+  )
 
   const deleteModalResourceName =
-    selectedItems.size === 1 ? [...selectedItems][0] : `${selectedItems.size} ${resourceType}s`
+    selectedData.length === 1
+      ? selectedData[0].metadata.name
+      : `${selectedItems.size} ${resourceType}s`
 
   return {
     selectedItems,
