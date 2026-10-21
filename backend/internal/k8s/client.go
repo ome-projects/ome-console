@@ -222,7 +222,9 @@ func (c *Client) StartInformers() error {
 	return nil
 }
 
-// Stop stops all informers
+// Stop stops all informers and waits for their goroutines, event handlers included, to exit.
 func (c *Client) Stop() {
 	close(c.stopCh)
+	c.DynamicInformerFactory.Shutdown()
+	c.InformerFactory.Shutdown()
 }
