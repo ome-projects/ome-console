@@ -218,8 +218,15 @@ export default function EditModelPage() {
             ← Back to Model Details
           </Link>
           <h1 className="text-3xl font-bold text-foreground">Edit Model</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Editing <span className="font-mono text-primary">{model.metadata.name}</span>
+          <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              Editing <span className="font-mono text-primary">{model.metadata.name}</span>
+            </span>
+            <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+              {model.metadata.namespace
+                ? `Namespace: ${model.metadata.namespace}`
+                : 'Cluster-scoped'}
+            </span>
           </p>
         </div>
       </header>

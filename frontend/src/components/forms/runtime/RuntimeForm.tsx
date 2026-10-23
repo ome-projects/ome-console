@@ -154,23 +154,32 @@ export function RuntimeForm({
           <h1 className="text-4xl font-bold text-slate-900 tracking-tight">
             {isEditMode ? 'Edit Runtime' : isCloneMode ? 'Clone Runtime' : 'Create New Runtime'}
           </h1>
-          <p className="mt-2 text-sm text-slate-600 font-medium">
-            {isEditMode ? (
-              <>
-                Configure{' '}
-                <span className="font-mono text-purple-600">{initialData?.metadata?.name}</span>{' '}
-                runtime settings
-              </>
-            ) : isCloneMode ? (
-              <>
-                Create a new runtime based on{' '}
-                <span className="font-mono text-purple-600">{cloneFrom}</span>
-              </>
-            ) : (
-              <>
-                Define a new{' '}
-                <span className="font-mono text-purple-600">ClusterServingRuntime</span> resource
-              </>
+          <p className="mt-2 flex items-center gap-2 text-sm text-slate-600 font-medium">
+            <span>
+              {isEditMode ? (
+                <>
+                  Configure{' '}
+                  <span className="font-mono text-purple-600">{initialData?.metadata?.name}</span>{' '}
+                  runtime settings
+                </>
+              ) : isCloneMode ? (
+                <>
+                  Create a new runtime based on{' '}
+                  <span className="font-mono text-purple-600">{cloneFrom}</span>
+                </>
+              ) : (
+                <>
+                  Define a new{' '}
+                  <span className="font-mono text-purple-600">ClusterServingRuntime</span> resource
+                </>
+              )}
+            </span>
+            {(isEditMode || isCloneMode) && initialData && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                {initialData.metadata?.namespace
+                  ? `Namespace: ${initialData.metadata.namespace}`
+                  : 'Cluster-scoped'}
+              </span>
             )}
           </p>
         </div>
