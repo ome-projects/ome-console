@@ -12,7 +12,14 @@ export interface CompatibleRuntimesResponse {
   total: number
 }
 
+/** `/runtimes/<name>` for a ClusterServingRuntime, `/namespaces/<ns>/runtimes/<name>` for a ServingRuntime. */
+const runtimePath = (name: string, namespace?: string) =>
+  namespace
+    ? `/namespaces/${encodeURIComponent(namespace)}/runtimes/${encodeURIComponent(name)}`
+    : `/runtimes/${encodeURIComponent(name)}`
+
 export const runtimesApi = {
+  /** Lists ClusterServingRuntimes, or the ServingRuntimes of `namespace` when one is given. */
   list: async (namespace?: string): Promise<ListResponse<ClusterServingRuntime>> => {
     const params = namespace ? { namespace } : {}
     const response = await apiClient.get<ListResponse<ClusterServingRuntime>>('/runtimes', {
@@ -21,26 +28,33 @@ export const runtimesApi = {
     return response.data
   },
 
-  get: async (name: string): Promise<ClusterServingRuntime> => {
-    const response = await apiClient.get<ClusterServingRuntime>(`/runtimes/${name}`)
+  get: async (name: string, namespace?: string): Promise<ClusterServingRuntime> => {
+    const response = await apiClient.get<ClusterServingRuntime>(runtimePath(name, namespace))
     return response.data
   },
 
+  /** Creates a ServingRuntime when the object carries `metadata.namespace`, else a ClusterServingRuntime. */
   create: async (runtime: Partial<ClusterServingRuntime>): Promise<ClusterServingRuntime> => {
-    const response = await apiClient.post<ClusterServingRuntime>('/runtimes', runtime)
+    const namespace = runtime.metadata?.namespace
+    const path = namespace ? `/namespaces/${encodeURIComponent(namespace)}/runtimes` : '/runtimes'
+    const response = await apiClient.post<ClusterServingRuntime>(path, runtime)
     return response.data
   },
 
   update: async (
     name: string,
-    runtime: Partial<ClusterServingRuntime>
+    runtime: Partial<ClusterServingRuntime>,
+    namespace?: string
   ): Promise<ClusterServingRuntime> => {
-    const response = await apiClient.put<ClusterServingRuntime>(`/runtimes/${name}`, runtime)
+    const response = await apiClient.put<ClusterServingRuntime>(
+      runtimePath(name, namespace ?? runtime.metadata?.namespace),
+      runtime
+    )
     return response.data
   },
 
-  delete: async (name: string): Promise<void> => {
-    await apiClient.delete(`/runtimes/${name}`)
+  delete: async (name: string, namespace?: string): Promise<void> => {
+    await apiClient.delete(runtimePath(name, namespace))
   },
 
   // Intelligence features

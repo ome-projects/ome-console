@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +11,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
 )
+
+// ErrNoCompatibleRuntime is returned by GetRecommendation when no runtime matches the model.
+var ErrNoCompatibleRuntime = errors.New("no compatible runtimes found")
 
 // RuntimeIntelligenceService provides intelligent runtime matching and recommendations
 type RuntimeIntelligenceService struct {
@@ -92,7 +96,7 @@ func (s *RuntimeIntelligenceService) GetRecommendation(ctx context.Context, mode
 	}
 
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("no compatible runtimes found for format=%s, framework=%s", modelFormat, modelFramework)
+		return nil, fmt.Errorf("%w for format=%s, framework=%s", ErrNoCompatibleRuntime, modelFormat, modelFramework)
 	}
 
 	// Return the highest scored match

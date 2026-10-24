@@ -1,7 +1,9 @@
 'use client'
 
 import { useModel, useDeleteModel, useModelProgress } from '@/lib/hooks/useModels'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useResourceRef } from '@/lib/hooks/useResourceRef'
+import { withNamespace } from '@/lib/utils'
 import Link from 'next/link'
 import { useState } from 'react'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
@@ -38,10 +40,9 @@ function formatDuration(seconds: number): string {
 }
 
 export default function ModelDetailPage() {
-  const params = useParams()
+  const { name, namespace } = useResourceRef()
   const router = useRouter()
-  const name = params.name as string
-  const { data: model, isLoading, error } = useModel(name)
+  const { data: model, isLoading, error } = useModel(name, namespace)
   const deleteModel = useDeleteModel()
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showRawSpec, setShowRawSpec] = useState(false)
@@ -58,7 +59,7 @@ export default function ModelDetailPage() {
 
   const handleDelete = async () => {
     try {
-      await deleteModel.mutateAsync(name)
+      await deleteModel.mutateAsync({ name, namespace })
       router.push('/models')
     } catch (err) {
       console.error('Failed to delete model:', err)
@@ -111,7 +112,7 @@ export default function ModelDetailPage() {
                 Export YAML
               </button>
               <button
-                onClick={() => router.push(`/models/${name}/edit`)}
+                onClick={() => router.push(withNamespace(`/models/${name}/edit`, namespace))}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
                 Edit Model

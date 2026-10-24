@@ -18,7 +18,7 @@ var (
 
 // ListAcceleratorClasses returns all AcceleratorClasses in the cluster from cache
 func (c *Client) ListAcceleratorClasses(ctx context.Context) (*unstructured.UnstructuredList, error) {
-	return c.listFromCache(AcceleratorClassGVR, "")
+	return c.listFromCache(AcceleratorClassGVR, "", nil)
 }
 
 // GetAcceleratorClass returns a specific AcceleratorClass by name from cache

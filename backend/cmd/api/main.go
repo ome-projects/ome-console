@@ -46,6 +46,17 @@ func main() {
 		logger.Fatal("Failed to set up informers", zap.Error(err))
 	}
 
+	// Field validation for writes: Strict (default) rejects fields the CRD does not declare
+	if mode := os.Getenv("OME_FIELD_VALIDATION"); mode != "" {
+		switch mode {
+		case k8s.FieldValidationStrict, k8s.FieldValidationWarn, k8s.FieldValidationIgnore:
+			k8sClient.FieldValidation = mode
+		default:
+			logger.Fatal("Invalid OME_FIELD_VALIDATION", zap.String("value", mode),
+				zap.Strings("allowed", []string{k8s.FieldValidationStrict, k8s.FieldValidationWarn, k8s.FieldValidationIgnore}))
+		}
+	}
+
 	// Bound the wait for the informer caches so a missing permission fails loudly
 	if timeout := os.Getenv("INFORMER_SYNC_TIMEOUT"); timeout != "" {
 		d, err := time.ParseDuration(timeout)

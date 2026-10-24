@@ -58,13 +58,7 @@ func (h *RuntimesHandler) List(c *gin.Context) {
 	if namespace != "" {
 		runtimes, err := h.k8sClient.ListServingRuntimes(ctx, namespace)
 		if err != nil {
-			h.logger.Error("Failed to list serving runtimes",
-				zap.String("namespace", namespace),
-				zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to list serving runtimes",
-				"details": err.Error(),
-			})
+			writeError(c, h.logger, "Failed to list serving runtimes", err)
 			return
 		}
 
@@ -79,11 +73,7 @@ func (h *RuntimesHandler) List(c *gin.Context) {
 	// Otherwise, list cluster-scoped ClusterServingRuntimes
 	runtimes, err := h.k8sClient.ListClusterServingRuntimes(ctx)
 	if err != nil {
-		h.logger.Error("Failed to list runtimes", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to list runtimes",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to list runtimes", err)
 		return
 	}
 
@@ -100,11 +90,7 @@ func (h *RuntimesHandler) Get(c *gin.Context) {
 
 	runtime, err := h.k8sClient.GetClusterServingRuntime(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get runtime", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Runtime not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Runtime not found", err)
 		return
 	}
 
@@ -117,11 +103,7 @@ func (h *RuntimesHandler) Create(c *gin.Context) {
 
 	var runtimeData map[string]interface{}
 	if err := c.ShouldBindJSON(&runtimeData); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -138,11 +120,7 @@ func (h *RuntimesHandler) Create(c *gin.Context) {
 
 	created, err := h.k8sClient.CreateClusterServingRuntime(ctx, runtime)
 	if err != nil {
-		h.logger.Error("Failed to create runtime", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create runtime",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to create runtime", err)
 		return
 	}
 
@@ -157,11 +135,7 @@ func (h *RuntimesHandler) Update(c *gin.Context) {
 
 	var runtimeData map[string]interface{}
 	if err := c.ShouldBindJSON(&runtimeData); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -181,11 +155,7 @@ func (h *RuntimesHandler) Update(c *gin.Context) {
 
 	updated, err := h.k8sClient.UpdateClusterServingRuntime(ctx, runtime)
 	if err != nil {
-		h.logger.Error("Failed to update runtime", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to update runtime",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to update runtime", err)
 		return
 	}
 
@@ -200,11 +170,7 @@ func (h *RuntimesHandler) Delete(c *gin.Context) {
 
 	err := h.k8sClient.DeleteClusterServingRuntime(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to delete runtime", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to delete runtime",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to delete runtime", err)
 		return
 	}
 
@@ -360,11 +326,7 @@ func (h *RuntimesHandler) FetchYAML(c *gin.Context) {
 	// #nosec G107 -- URL is validated against strict allowlist (GitHub/GitLab/Bitbucket only)
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, safeURL.String(), nil) //nolint:gosec
 	if err != nil {
-		h.logger.Error("Failed to create request", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create request",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to create request", err)
 		return
 	}
 
@@ -373,11 +335,7 @@ func (h *RuntimesHandler) FetchYAML(c *gin.Context) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		h.logger.Error("Failed to fetch URL", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to fetch URL",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to fetch URL", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -395,11 +353,7 @@ func (h *RuntimesHandler) FetchYAML(c *gin.Context) {
 	limitedReader := io.LimitReader(resp.Body, 10*1024*1024)
 	content, err := io.ReadAll(limitedReader)
 	if err != nil {
-		h.logger.Error("Failed to read response body", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to read response",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to read response", err)
 		return
 	}
 
@@ -424,14 +378,7 @@ func (h *RuntimesHandler) FindCompatibleRuntimes(c *gin.Context) {
 
 	matches, err := h.intelligence.FindCompatibleRuntimes(ctx, modelFormat, modelFramework)
 	if err != nil {
-		h.logger.Error("Failed to find compatible runtimes",
-			zap.String("format", modelFormat),
-			zap.String("framework", modelFramework),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to find compatible runtimes",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to find compatible runtimes", err)
 		return
 	}
 
@@ -457,14 +404,7 @@ func (h *RuntimesHandler) CheckCompatibility(c *gin.Context) {
 
 	check, err := h.intelligence.CheckCompatibility(ctx, name, modelFormat, modelFramework)
 	if err != nil {
-		h.logger.Error("Failed to check compatibility",
-			zap.String("runtime", name),
-			zap.String("format", modelFormat),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to check compatibility",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to check compatibility", err)
 		return
 	}
 
@@ -486,14 +426,7 @@ func (h *RuntimesHandler) GetRecommendation(c *gin.Context) {
 
 	recommendation, err := h.intelligence.GetRecommendation(ctx, modelFormat, modelFramework)
 	if err != nil {
-		h.logger.Error("Failed to get recommendation",
-			zap.String("format", modelFormat),
-			zap.String("framework", modelFramework),
-			zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "No compatible runtime found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "No compatible runtime found", err)
 		return
 	}
 
@@ -506,11 +439,7 @@ func (h *RuntimesHandler) ValidateConfiguration(c *gin.Context) {
 
 	var runtimeData map[string]interface{}
 	if err := c.ShouldBindJSON(&runtimeData); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -518,11 +447,7 @@ func (h *RuntimesHandler) ValidateConfiguration(c *gin.Context) {
 
 	errors, warnings, err := h.intelligence.ValidateRuntimeConfiguration(ctx, runtime)
 	if err != nil {
-		h.logger.Error("Failed to validate configuration", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to validate configuration",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to validate configuration", err)
 		return
 	}
 
@@ -544,22 +469,14 @@ func (h *RuntimesHandler) Clone(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
 	// Get the existing runtime
 	runtime, err := h.k8sClient.GetClusterServingRuntime(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get runtime for cloning", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Runtime not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Runtime not found", err)
 		return
 	}
 
@@ -577,14 +494,7 @@ func (h *RuntimesHandler) Clone(c *gin.Context) {
 	// Create the cloned runtime
 	created, err := h.k8sClient.CreateClusterServingRuntime(ctx, cloned)
 	if err != nil {
-		h.logger.Error("Failed to create cloned runtime",
-			zap.String("original", name),
-			zap.String("new", req.NewName),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create cloned runtime",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to create cloned runtime", err)
 		return
 	}
 

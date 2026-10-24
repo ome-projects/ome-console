@@ -1,20 +1,21 @@
 'use client'
 
 import { useRuntime, useUpdateRuntime } from '@/lib/hooks/useRuntimes'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useResourceRef } from '@/lib/hooks/useResourceRef'
+import { withNamespace } from '@/lib/utils'
 import { RuntimeForm } from '@/components/forms/runtime'
 import { ErrorState } from '@/components/ui/ErrorState'
 
 export default function EditRuntimePage() {
-  const params = useParams()
+  const { name, namespace } = useResourceRef()
   const router = useRouter()
-  const name = params.name as string
-  const { data: runtime, isLoading: isLoadingRuntime } = useRuntime(name)
+  const { data: runtime, isLoading: isLoadingRuntime } = useRuntime(name, namespace)
   const updateRuntime = useUpdateRuntime()
 
   const handleSubmit = async (data: any) => {
-    await updateRuntime.mutateAsync({ name, runtime: data })
-    router.push(`/runtimes/${name}`)
+    await updateRuntime.mutateAsync({ name, namespace, runtime: data })
+    router.push(withNamespace(`/runtimes/${name}`, namespace))
   }
 
   if (!isLoadingRuntime && !runtime) {
@@ -32,7 +33,7 @@ export default function EditRuntimePage() {
       initialData={runtime}
       onSubmit={handleSubmit}
       isLoading={isLoadingRuntime}
-      backLink={`/runtimes/${name}`}
+      backLink={withNamespace(`/runtimes/${name}`, namespace)}
       backLinkText="Back to Runtime Details"
     />
   )

@@ -1,7 +1,9 @@
 'use client'
 
 import { useModel, useUpdateModel } from '@/lib/hooks/useModels'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useResourceRef } from '@/lib/hooks/useResourceRef'
+import { withNamespace } from '@/lib/utils'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { useState, useEffect } from 'react'
@@ -92,10 +94,9 @@ function KeyValueEditor({
 }
 
 export default function EditModelPage() {
-  const params = useParams()
+  const { name, namespace } = useResourceRef()
   const router = useRouter()
-  const name = params.name as string
-  const { data: model, isLoading, error } = useModel(name)
+  const { data: model, isLoading, error } = useModel(name, namespace)
   const updateModel = useUpdateModel()
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -186,8 +187,8 @@ export default function EditModelPage() {
         },
       }
 
-      await updateModel.mutateAsync({ name, model: updatedModel })
-      router.push(`/models/${name}`)
+      await updateModel.mutateAsync({ name, namespace, model: updatedModel })
+      router.push(withNamespace(`/models/${name}`, namespace))
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update model')
     }
@@ -211,14 +212,21 @@ export default function EditModelPage() {
       <header className="border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
           <Link
-            href={`/models/${name}`}
+            href={withNamespace(`/models/${name}`, namespace)}
             className="text-sm text-primary hover:text-primary/80 mb-2 inline-block"
           >
             ← Back to Model Details
           </Link>
           <h1 className="text-3xl font-bold text-foreground">Edit Model</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Editing <span className="font-mono text-primary">{model.metadata.name}</span>
+          <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              Editing <span className="font-mono text-primary">{model.metadata.name}</span>
+            </span>
+            <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+              {model.metadata.namespace
+                ? `Namespace: ${model.metadata.namespace}`
+                : 'Cluster-scoped'}
+            </span>
           </p>
         </div>
       </header>
@@ -423,7 +431,7 @@ export default function EditModelPage() {
             {/* Cancel and Submit - Right side */}
             <div className="flex gap-4">
               <Link
-                href={`/models/${name}`}
+                href={withNamespace(`/models/${name}`, namespace)}
                 className="rounded-lg border border-border bg-card px-6 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
               >
                 Cancel

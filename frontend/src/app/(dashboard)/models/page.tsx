@@ -4,9 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useModels, useDeleteModel } from '@/lib/hooks/useModels'
 import { useNamespaces } from '@/lib/hooks/useNamespaces'
-import { useServerEvents } from '@/lib/hooks/useServerEvents'
 import { useBulkSelection } from '@/lib/hooks/useBulkSelection'
-import { useQueryClient } from '@tanstack/react-query'
 import { useSortedData } from '@/lib/hooks/useSortedData'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -17,6 +15,7 @@ import { SortableHeader } from '@/components/ui/SortableHeader'
 import { BulkActionDropdown } from '@/components/ui/BulkActionDropdown'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
+import { resourceHref, resourceKey } from '@/lib/utils'
 import {
   ResourcePageHeader,
   StatsGrid,
@@ -35,17 +34,7 @@ export default function ModelsPage() {
 
   const { data, isLoading, error } = useModels(selectedNamespace || undefined)
   const { data: namespacesData } = useNamespaces()
-  const queryClient = useQueryClient()
   const deleteModel = useDeleteModel()
-
-  // Connect to SSE for real-time updates
-  useServerEvents({
-    onEvent: (event) => {
-      if (event.resource === 'models') {
-        queryClient.invalidateQueries({ queryKey: ['models'] })
-      }
-    },
-  })
 
   const getValue = (model: ClusterBaseModel, field: SortField) => {
     switch (field) {
@@ -217,21 +206,21 @@ export default function ModelsPage() {
             ) : (
               sortedModels.map((model) => (
                 <tr
-                  key={model.metadata.name}
+                  key={resourceKey(model)}
                   className={`transition-colors hover:bg-muted/30 ${
-                    selectedItems.has(model.metadata.name) ? 'bg-primary/5' : ''
+                    selectedItems.has(resourceKey(model)) ? 'bg-primary/5' : ''
                   }`}
                 >
                   <td className="w-12 px-4 py-4">
                     <Checkbox
-                      checked={selectedItems.has(model.metadata.name)}
-                      onChange={(checked) => handleSelectItem(model.metadata.name, checked)}
+                      checked={selectedItems.has(resourceKey(model))}
+                      onChange={(checked) => handleSelectItem(resourceKey(model), checked)}
                       aria-label={`Select ${model.metadata.name}`}
                     />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
                     <Link
-                      href={`/models/${model.metadata.name}`}
+                      href={resourceHref('/models', model)}
                       className="text-primary hover:text-primary/80 transition-colors"
                     >
                       {model.metadata.name}

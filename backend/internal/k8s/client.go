@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
@@ -19,6 +20,9 @@ import (
 const (
 	// DefaultCacheSyncTimeout bounds how long StartInformers waits for the caches to fill.
 	DefaultCacheSyncTimeout = 60 * time.Second
+	// DiscoveryTimeout bounds each API discovery request made at startup, so an unreachable
+	// API server fails startup instead of hanging before the informers even start.
+	DiscoveryTimeout = 30 * time.Second
 	// informerResyncPeriod is how often informers replay their cache through UpdateFunc.
 	informerResyncPeriod = 30 * time.Second
 )
@@ -40,8 +44,12 @@ type ResourceEvent struct {
 
 // Client wraps Kubernetes client functionality with informers
 type Client struct {
-	Clientset              kubernetes.Interface
-	DynamicClient          dynamic.Interface
+	Clientset     kubernetes.Interface
+	DynamicClient dynamic.Interface
+	// Discovery answers which API resources the cluster serves. NewClient gives it its own
+	// request timeout (DiscoveryTimeout); informer watches must stay unbounded, so the
+	// timeout cannot live on the shared rest.Config.
+	Discovery              discovery.DiscoveryInterface
 	Config                 *rest.Config
 	Logger                 *zap.Logger
 	DynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
@@ -52,6 +60,9 @@ type Client struct {
 	// CacheSyncTimeout bounds how long StartInformers waits for the caches to fill. A missing
 	// CRD or a missing list/watch permission would otherwise make the wait last forever.
 	CacheSyncTimeout time.Duration
+	// FieldValidation is the API server field validation mode for writes: Strict (default),
+	// Warn or Ignore. See WriteOptions.
+	FieldValidation string
 
 	// registered holds the resources whose informers were created before StartInformers ran.
 	// It is written during SetupInformers and only read afterwards.
@@ -95,8 +106,18 @@ func NewClient(logger *zap.Logger) (*Client, error) {
 		return nil, err
 	}
 
+	// Discovery gets a bounded client of its own; see Client.Discovery.
+	discoveryConfig := rest.CopyConfig(config)
+	discoveryConfig.Timeout = DiscoveryTimeout
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(discoveryConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	logger.Info("Kubernetes client initialized successfully")
-	return NewClientWith(clientset, dynamicClient, config, logger), nil
+	client := NewClientWith(clientset, dynamicClient, config, logger)
+	client.Discovery = discoveryClient
+	return client, nil
 }
 
 // NewClientWith wires a Client around existing API clients. NewClient uses it for real clusters;
@@ -105,12 +126,14 @@ func NewClientWith(clientset kubernetes.Interface, dynamicClient dynamic.Interfa
 	return &Client{
 		Clientset:              clientset,
 		DynamicClient:          dynamicClient,
+		Discovery:              clientset.Discovery(),
 		Config:                 config,
 		Logger:                 logger,
 		DynamicInformerFactory: dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, informerResyncPeriod),
 		InformerFactory:        informers.NewSharedInformerFactory(clientset, informerResyncPeriod),
 		Broadcaster:            NewEventBroadcaster(),
 		CacheSyncTimeout:       DefaultCacheSyncTimeout,
+		FieldValidation:        FieldValidationStrict,
 		registered:             make(map[schema.GroupVersionResource]bool),
 		stopCh:                 make(chan struct{}),
 	}

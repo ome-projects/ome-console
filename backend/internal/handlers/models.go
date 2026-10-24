@@ -36,13 +36,7 @@ func (h *ModelsHandler) List(c *gin.Context) {
 	if namespace != "" {
 		models, err := h.k8sClient.ListBaseModels(ctx, namespace)
 		if err != nil {
-			h.logger.Error("Failed to list base models",
-				zap.String("namespace", namespace),
-				zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to list base models",
-				"details": err.Error(),
-			})
+			writeError(c, h.logger, "Failed to list base models", err)
 			return
 		}
 
@@ -57,11 +51,7 @@ func (h *ModelsHandler) List(c *gin.Context) {
 	// Otherwise, list cluster-scoped ClusterBaseModels
 	models, err := h.k8sClient.ListClusterBaseModels(ctx)
 	if err != nil {
-		h.logger.Error("Failed to list models", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to list models",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to list models", err)
 		return
 	}
 
@@ -78,11 +68,7 @@ func (h *ModelsHandler) Get(c *gin.Context) {
 
 	model, err := h.k8sClient.GetClusterBaseModel(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get model", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Model not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Model not found", err)
 		return
 	}
 
@@ -98,11 +84,7 @@ func (h *ModelsHandler) Create(c *gin.Context) {
 		HuggingfaceToken string                 `json:"huggingfaceToken,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -131,14 +113,7 @@ func (h *ModelsHandler) Create(c *gin.Context) {
 		namespace := "ome" // ClusterBaseModels use ome namespace
 
 		if err := h.k8sClient.CreateHuggingFaceTokenSecret(ctx, secretName, namespace, requestBody.HuggingfaceToken); err != nil {
-			h.logger.Error("Failed to create HuggingFace token secret",
-				zap.String("secretName", secretName),
-				zap.String("namespace", namespace),
-				zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to create HuggingFace token secret",
-				"details": err.Error(),
-			})
+			writeError(c, h.logger, "Failed to create HuggingFace token secret", err)
 			return
 		}
 
@@ -164,11 +139,7 @@ func (h *ModelsHandler) Create(c *gin.Context) {
 
 	created, err := h.k8sClient.CreateClusterBaseModel(ctx, model)
 	if err != nil {
-		h.logger.Error("Failed to create model", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create model",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to create model", err)
 		return
 	}
 
@@ -183,11 +154,7 @@ func (h *ModelsHandler) Update(c *gin.Context) {
 
 	var modelData map[string]interface{}
 	if err := c.ShouldBindJSON(&modelData); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -207,11 +174,7 @@ func (h *ModelsHandler) Update(c *gin.Context) {
 
 	updated, err := h.k8sClient.UpdateClusterBaseModel(ctx, model)
 	if err != nil {
-		h.logger.Error("Failed to update model", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to update model",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to update model", err)
 		return
 	}
 
@@ -226,11 +189,7 @@ func (h *ModelsHandler) Delete(c *gin.Context) {
 
 	err := h.k8sClient.DeleteClusterBaseModel(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to delete model", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to delete model",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to delete model", err)
 		return
 	}
 
@@ -248,11 +207,7 @@ func (h *ModelsHandler) GetStatus(c *gin.Context) {
 
 	model, err := h.k8sClient.GetClusterBaseModel(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get model status", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Model not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Model not found", err)
 		return
 	}
 
@@ -279,11 +234,7 @@ func (h *ModelsHandler) ListBaseModels(c *gin.Context) {
 
 	models, err := h.k8sClient.ListBaseModels(ctx, namespace)
 	if err != nil {
-		h.logger.Error("Failed to list base models", zap.String("namespace", namespace), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to list base models",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to list base models", err)
 		return
 	}
 
@@ -301,14 +252,7 @@ func (h *ModelsHandler) GetBaseModel(c *gin.Context) {
 
 	model, err := h.k8sClient.GetBaseModel(ctx, namespace, name)
 	if err != nil {
-		h.logger.Error("Failed to get base model",
-			zap.String("namespace", namespace),
-			zap.String("name", name),
-			zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "Base model not found",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Base model not found", err)
 		return
 	}
 
@@ -322,11 +266,7 @@ func (h *ModelsHandler) CreateBaseModel(c *gin.Context) {
 
 	var modelData map[string]interface{}
 	if err := c.ShouldBindJSON(&modelData); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -346,13 +286,7 @@ func (h *ModelsHandler) CreateBaseModel(c *gin.Context) {
 
 	created, err := h.k8sClient.CreateBaseModel(ctx, namespace, model)
 	if err != nil {
-		h.logger.Error("Failed to create base model",
-			zap.String("namespace", namespace),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create base model",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to create base model", err)
 		return
 	}
 
@@ -370,11 +304,7 @@ func (h *ModelsHandler) UpdateBaseModel(c *gin.Context) {
 
 	var modelData map[string]interface{}
 	if err := c.ShouldBindJSON(&modelData); err != nil {
-		h.logger.Error("Failed to parse request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
 
@@ -395,14 +325,7 @@ func (h *ModelsHandler) UpdateBaseModel(c *gin.Context) {
 
 	updated, err := h.k8sClient.UpdateBaseModel(ctx, namespace, model)
 	if err != nil {
-		h.logger.Error("Failed to update base model",
-			zap.String("namespace", namespace),
-			zap.String("name", name),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to update base model",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to update base model", err)
 		return
 	}
 
@@ -420,14 +343,7 @@ func (h *ModelsHandler) DeleteBaseModel(c *gin.Context) {
 
 	err := h.k8sClient.DeleteBaseModel(ctx, namespace, name)
 	if err != nil {
-		h.logger.Error("Failed to delete base model",
-			zap.String("namespace", namespace),
-			zap.String("name", name),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to delete base model",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to delete base model", err)
 		return
 	}
 
@@ -459,11 +375,7 @@ func (h *ModelsHandler) GetEvents(c *gin.Context) {
 
 	events, err := h.k8sClient.GetClusterBaseModelEvents(ctx, name)
 	if err != nil {
-		h.logger.Error("Failed to get model events", zap.String("name", name), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to get model events",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to get model events", err)
 		return
 	}
 
@@ -518,11 +430,7 @@ func (h *ModelsHandler) GetProgress(c *gin.Context) {
 
 	configMaps, err := h.k8sClient.GetModelStatusConfigMaps(ctx)
 	if err != nil {
-		h.logger.Error("Failed to get model status ConfigMaps", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to get model progress",
-			"details": err.Error(),
-		})
+		writeError(c, h.logger, "Failed to get model progress", err)
 		return
 	}
 
