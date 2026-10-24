@@ -224,9 +224,9 @@ func (h *ResourceHandler) Update(c *gin.Context) {
 }
 
 // Patch handles PATCH on one object. The Content-Type selects the patch type:
-// application/json-patch+json, application/merge-patch+json or
-// application/strategic-merge-patch+json. A plain application/json body is a JSON patch when it
-// is an array and a merge patch otherwise.
+// application/json-patch+json or application/merge-patch+json; OME resources are custom
+// resources, which do not support strategic merge patch. A plain application/json body is a
+// JSON patch when it is an array and a merge patch otherwise.
 func (h *ResourceHandler) Patch(c *gin.Context) {
 	namespace, ok := h.requireNamespace(c)
 	if !ok {
@@ -316,8 +316,6 @@ func patchTypeFor(contentType string, body []byte) (types.PatchType, error) {
 		return types.JSONPatchType, nil
 	case "application/merge-patch+json":
 		return types.MergePatchType, nil
-	case "application/strategic-merge-patch+json":
-		return types.StrategicMergePatchType, nil
 	case "application/json", "":
 		if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
 			return types.JSONPatchType, nil

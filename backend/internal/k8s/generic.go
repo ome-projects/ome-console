@@ -118,8 +118,9 @@ func (c *Client) Delete(ctx context.Context, res OMEResource, namespace, name st
 	return c.resourceClient(res, namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
-// Patch applies a JSON patch, merge patch or strategic merge patch to one object of a resource,
-// optionally on a subresource such as "status" or "scale".
+// Patch applies a JSON patch or merge patch to one object of a resource, optionally on a
+// subresource such as "status" or "scale". OME resources are custom resources, which do not
+// support strategic merge patch.
 func (c *Client) Patch(ctx context.Context, res OMEResource, namespace, name string, patchType types.PatchType, data []byte, opts WriteOptions, subresources ...string) (*unstructured.Unstructured, error) {
 	if err := c.requireSupported(res); err != nil {
 		return nil, err

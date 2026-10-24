@@ -314,7 +314,7 @@ The single-object service routes also answer at `/api/v1/services/:name?namespac
 
 - `?dryRun=true` on `POST`, `PUT` and `PATCH` runs admission and validation on the API server without persisting anything, and returns the object as it would be stored. Any value other than `true` or `false` is rejected with a `400`.
 - Writes use the API server's `Strict` field validation by default (`OME_FIELD_VALIDATION`), so a field the installed OME CRD does not declare is rejected with a `422` naming the field instead of being dropped silently.
-- `PATCH` accepts `application/json-patch+json`, `application/merge-patch+json` or `application/strategic-merge-patch+json`. With `application/json`, an array body is a JSON patch and an object body is a merge patch.
+- `PATCH` accepts `application/json-patch+json` or `application/merge-patch+json`; OME resources are custom resources, which do not support strategic merge patch. With `application/json`, an array body is a JSON patch and an object body is a merge patch.
 
 ### Errors
 

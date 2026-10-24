@@ -258,7 +258,7 @@ func TestPatchTypeFor(t *testing.T) {
 	}{
 		{"application/json-patch+json", "[]", "application/json-patch+json", false},
 		{"application/merge-patch+json", "{}", "application/merge-patch+json", false},
-		{"application/strategic-merge-patch+json", "{}", "application/strategic-merge-patch+json", false},
+		{"application/strategic-merge-patch+json", "{}", "", true},
 		{"application/json", "[{}]", "application/json-patch+json", false},
 		{"application/json", " {}", "application/merge-patch+json", false},
 		{"", "{}", "application/merge-patch+json", false},
