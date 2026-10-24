@@ -271,7 +271,7 @@ export default function DeployServicePage() {
   const onSubmit = async (data: DeployFormData) => {
     try {
       await createService.mutateAsync({
-        apiVersion: 'serving.ome.io/v1beta1',
+        apiVersion: 'ome.io/v1beta1',
         kind: 'InferenceService',
         metadata: {
           name: data.name,
