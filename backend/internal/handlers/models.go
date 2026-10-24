@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -77,6 +78,14 @@ func (h *ModelsHandler) Get(c *gin.Context) {
 
 // Create handles POST /api/v1/models
 func (h *ModelsHandler) Create(c *gin.Context) {
+	h.create(c, "")
+}
+
+// create creates a ClusterBaseModel, or a BaseModel in namespace when one is given, from a
+// {model, huggingfaceToken} body. A token is stored in a Secret that spec.storage.key names, in
+// the namespace OME's model agent reads it from: the BaseModel's own, or "ome" for a
+// ClusterBaseModel.
+func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 	ctx := c.Request.Context()
 
 	var requestBody struct {
@@ -87,63 +96,61 @@ func (h *ModelsHandler) Create(c *gin.Context) {
 		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
-
-	modelData := requestBody.Model
-	if modelData == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Missing 'model' field in request body",
-		})
+	if requestBody.Model == nil {
+		writeBadRequest(c, h.logger, "Invalid request body", errors.New("missing 'model' field"))
 		return
 	}
 
-	// Create unstructured object
-	model := &unstructured.Unstructured{Object: modelData}
+	model := &unstructured.Unstructured{Object: requestBody.Model}
+
+	kind, secretNamespace := "ClusterBaseModel", "ome"
+	if namespace != "" {
+		kind, secretNamespace = "BaseModel", namespace
+		model.SetNamespace(namespace)
+	}
 
 	// Set GVK if not present
 	if model.GetAPIVersion() == "" {
 		model.SetAPIVersion("ome.io/v1beta1")
 	}
 	if model.GetKind() == "" {
-		model.SetKind("ClusterBaseModel")
+		model.SetKind(kind)
 	}
 
 	// If HuggingFace token provided, create secret and set storageKey
 	if requestBody.HuggingfaceToken != "" {
 		secretName := model.GetName() + "-hf-token"
-		namespace := "ome" // ClusterBaseModels use ome namespace
+		if err := unstructured.SetNestedField(model.Object, secretName, "spec", "storage", "key"); err != nil {
+			writeBadRequest(c, h.logger, "Invalid model spec", err)
+			return
+		}
 
-		if err := h.k8sClient.CreateHuggingFaceTokenSecret(ctx, secretName, namespace, requestBody.HuggingfaceToken); err != nil {
+		if err := h.k8sClient.CreateHuggingFaceTokenSecret(ctx, secretName, secretNamespace, requestBody.HuggingfaceToken); err != nil {
 			writeError(c, h.logger, "Failed to create HuggingFace token secret", err)
 			return
 		}
 
-		// Set storage.key to reference the secret
-		spec, found, err := unstructured.NestedMap(model.Object, "spec")
-		if err != nil || !found {
-			spec = make(map[string]interface{})
-		}
-
-		storage, found, err := unstructured.NestedMap(spec, "storage")
-		if err != nil || !found {
-			storage = make(map[string]interface{})
-		}
-
-		storage["key"] = secretName
-		spec["storage"] = storage
-		model.Object["spec"] = spec
-
 		h.logger.Info("Created HuggingFace token secret",
 			zap.String("secretName", secretName),
-			zap.String("namespace", namespace))
+			zap.String("namespace", secretNamespace))
 	}
 
-	created, err := h.k8sClient.CreateClusterBaseModel(ctx, model)
+	var created *unstructured.Unstructured
+	var err error
+	if namespace == "" {
+		created, err = h.k8sClient.CreateClusterBaseModel(ctx, model)
+	} else {
+		created, err = h.k8sClient.CreateBaseModel(ctx, namespace, model)
+	}
 	if err != nil {
 		writeError(c, h.logger, "Failed to create model", err)
 		return
 	}
 
-	h.logger.Info("Model created successfully", zap.String("name", created.GetName()))
+	h.logger.Info("Model created successfully",
+		zap.String("kind", kind),
+		zap.String("namespace", namespace),
+		zap.String("name", created.GetName()))
 	c.JSON(http.StatusCreated, created.Object)
 }
 
@@ -261,39 +268,7 @@ func (h *ModelsHandler) GetBaseModel(c *gin.Context) {
 
 // CreateBaseModel handles POST /api/v1/namespaces/:namespace/models
 func (h *ModelsHandler) CreateBaseModel(c *gin.Context) {
-	ctx := c.Request.Context()
-	namespace := c.Param("namespace")
-
-	var modelData map[string]interface{}
-	if err := c.ShouldBindJSON(&modelData); err != nil {
-		writeBadRequest(c, h.logger, "Invalid request body", err)
-		return
-	}
-
-	// Create unstructured object
-	model := &unstructured.Unstructured{Object: modelData}
-
-	// Set GVK if not present
-	if model.GetAPIVersion() == "" {
-		model.SetAPIVersion("ome.io/v1beta1")
-	}
-	if model.GetKind() == "" {
-		model.SetKind("BaseModel")
-	}
-
-	// Ensure namespace is set
-	model.SetNamespace(namespace)
-
-	created, err := h.k8sClient.CreateBaseModel(ctx, namespace, model)
-	if err != nil {
-		writeError(c, h.logger, "Failed to create base model", err)
-		return
-	}
-
-	h.logger.Info("Base model created successfully",
-		zap.String("namespace", namespace),
-		zap.String("name", created.GetName()))
-	c.JSON(http.StatusCreated, created.Object)
+	h.create(c, c.Param("namespace"))
 }
 
 // UpdateBaseModel handles PUT /api/v1/namespaces/:namespace/models/:name
