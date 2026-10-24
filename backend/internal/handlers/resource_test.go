@@ -177,6 +177,21 @@ func TestResourceHandler_NamespacedRoutes(t *testing.T) {
 			t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
 		}
 	})
+	t.Run("writes take dryRun only as true or false", func(t *testing.T) {
+		body := []byte(`{"metadata":{"name":"llama"}}`)
+		for _, req := range []struct{ method, path string }{
+			{http.MethodPost, "/api/v1/namespaces/team-a/services?dryRun=1"},
+			{http.MethodPut, "/api/v1/namespaces/team-a/services/llama?dryRun=True"},
+			{http.MethodPatch, "/api/v1/namespaces/team-a/services/llama?dryRun="},
+		} {
+			expectError(t, do(t, router, req.method, req.path, body, "application/json"), http.StatusBadRequest, "BAD_REQUEST")
+		}
+		rec := do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/services?dryRun=false",
+			[]byte(`{"metadata":{"name":"notdry"},"spec":{}}`), "application/json")
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("dryRun=false create: %d %s", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 func TestResourceHandler_ClusterScopedRoutes(t *testing.T) {

@@ -82,8 +82,18 @@ func (h *ResourceHandler) requireNamespace(c *gin.Context) (string, bool) {
 	return ns, true
 }
 
-func (h *ResourceHandler) writeOptions(c *gin.Context) k8s.WriteOptions {
-	return k8s.WriteOptions{DryRun: c.Query("dryRun") == "true"}
+// writeOptions reads ?dryRun=, which must be true or false when present. Any other value is a
+// 400 rather than a real write, so a client that meant a dry run (dryRun=1) never persists.
+func (h *ResourceHandler) writeOptions(c *gin.Context) (k8s.WriteOptions, bool) {
+	raw, present := c.GetQuery("dryRun")
+	if !present || raw == "false" {
+		return k8s.WriteOptions{}, true
+	}
+	if raw == "true" {
+		return k8s.WriteOptions{DryRun: true}, true
+	}
+	writeBadRequest(c, h.logger, "Invalid dryRun", fmt.Errorf("dryRun must be true or false, got %q", raw))
+	return k8s.WriteOptions{}, false
 }
 
 // List handles GET on the collection. ?labelSelector= filters, ?namespace= narrows a top-level list.
@@ -161,7 +171,11 @@ func (h *ResourceHandler) Create(c *gin.Context) {
 		return
 	}
 
-	created, err := h.client.Create(c.Request.Context(), h.resource, namespace, obj, h.writeOptions(c))
+	opts, ok := h.writeOptions(c)
+	if !ok {
+		return
+	}
+	created, err := h.client.Create(c.Request.Context(), h.resource, namespace, obj, opts)
 	if err != nil {
 		writeError(c, h.logger, "Failed to create "+h.resource.Kind, err)
 		return
@@ -170,7 +184,7 @@ func (h *ResourceHandler) Create(c *gin.Context) {
 		zap.String("kind", h.resource.Kind),
 		zap.String("namespace", namespace),
 		zap.String("name", created.GetName()),
-		zap.Bool("dryRun", c.Query("dryRun") == "true"))
+		zap.Bool("dryRun", opts.DryRun))
 	c.JSON(http.StatusCreated, created.Object)
 }
 
@@ -192,7 +206,11 @@ func (h *ResourceHandler) Update(c *gin.Context) {
 	}
 	obj.SetName(name)
 
-	updated, err := h.client.Update(c.Request.Context(), h.resource, namespace, obj, h.writeOptions(c))
+	opts, ok := h.writeOptions(c)
+	if !ok {
+		return
+	}
+	updated, err := h.client.Update(c.Request.Context(), h.resource, namespace, obj, opts)
 	if err != nil {
 		writeError(c, h.logger, "Failed to update "+h.resource.Kind, err)
 		return
@@ -201,7 +219,7 @@ func (h *ResourceHandler) Update(c *gin.Context) {
 		zap.String("kind", h.resource.Kind),
 		zap.String("namespace", namespace),
 		zap.String("name", name),
-		zap.Bool("dryRun", c.Query("dryRun") == "true"))
+		zap.Bool("dryRun", opts.DryRun))
 	c.JSON(http.StatusOK, updated.Object)
 }
 
@@ -229,8 +247,12 @@ func (h *ResourceHandler) Patch(c *gin.Context) {
 		return
 	}
 
+	opts, ok := h.writeOptions(c)
+	if !ok {
+		return
+	}
 	name := c.Param("name")
-	patched, err := h.client.Patch(c.Request.Context(), h.resource, namespace, name, patchType, data, h.writeOptions(c))
+	patched, err := h.client.Patch(c.Request.Context(), h.resource, namespace, name, patchType, data, opts)
 	if err != nil {
 		writeError(c, h.logger, "Failed to patch "+h.resource.Kind, err)
 		return
@@ -240,7 +262,7 @@ func (h *ResourceHandler) Patch(c *gin.Context) {
 		zap.String("namespace", namespace),
 		zap.String("name", name),
 		zap.String("patchType", string(patchType)),
-		zap.Bool("dryRun", c.Query("dryRun") == "true"))
+		zap.Bool("dryRun", opts.DryRun))
 	c.JSON(http.StatusOK, patched.Object)
 }
 
