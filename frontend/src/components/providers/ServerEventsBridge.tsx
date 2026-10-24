@@ -10,11 +10,13 @@ const DEBOUNCE_MS = 250
 /**
  * Keeps React Query in sync with the cluster: every Server-Sent Event for a resource key
  * invalidates that key's queries, debounced per key so a burst of updates causes one refetch.
- * Rendered once in the dashboard layout.
+ * Events sent while the stream is down are not replayed, so a reconnect (not the first
+ * connection) invalidates every query. Rendered once in the dashboard layout.
  */
 export function ServerEventsBridge() {
   const queryClient = useQueryClient()
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const hasConnected = useRef(false)
 
   const onEvent = useCallback(
     (event: ResourceEvent) => {
@@ -31,7 +33,12 @@ export function ServerEventsBridge() {
     [queryClient]
   )
 
-  useServerEvents({ onEvent })
+  const onConnected = useCallback(() => {
+    if (hasConnected.current) void queryClient.invalidateQueries()
+    hasConnected.current = true
+  }, [queryClient])
+
+  useServerEvents({ onEvent, onConnected })
 
   useEffect(() => {
     const active = timers.current
