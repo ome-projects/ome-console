@@ -261,17 +261,19 @@ GET /health
 ```
 GET    /api/v1/models                    # List ClusterBaseModels
 GET    /api/v1/models/:name              # Get ClusterBaseModel
-POST   /api/v1/models                    # Create ClusterBaseModel
+POST   /api/v1/models                    # Create ClusterBaseModel; body {model, huggingfaceToken?}
 PUT    /api/v1/models/:name              # Update ClusterBaseModel
 DELETE /api/v1/models/:name              # Delete ClusterBaseModel
 
 # Namespace-scoped BaseModels
 GET    /api/v1/namespaces/:ns/models           # List BaseModels
 GET    /api/v1/namespaces/:ns/models/:name     # Get BaseModel
-POST   /api/v1/namespaces/:ns/models           # Create BaseModel
+POST   /api/v1/namespaces/:ns/models           # Create BaseModel; body {model, huggingfaceToken?}
 PUT    /api/v1/namespaces/:ns/models/:name     # Update BaseModel
 DELETE /api/v1/namespaces/:ns/models/:name     # Delete BaseModel
 ```
+
+A HuggingFace token on create is stored in a Secret named `<model>-hf-token` that `spec.storage.key` points to: in the BaseModel's namespace, or in `ome` for a ClusterBaseModel, which is where OME's model agent looks.
 
 ### Runtimes
 ```
