@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
+	"sigs.k8s.io/ome/ome-console/backend/internal/services"
 )
 
 // apiError is the body of every error response. The frontend reads message, code and details.
@@ -65,6 +66,9 @@ func writeBadRequest(c *gin.Context, logger *zap.Logger, action string, err erro
 func classifyError(err error) (int, string, interface{}) {
 	if errors.Is(err, k8s.ErrNotSupported) {
 		return http.StatusNotFound, "CAPABILITY_MISSING", nil
+	}
+	if errors.Is(err, services.ErrNoCompatibleRuntime) {
+		return http.StatusNotFound, "NOT_FOUND", nil
 	}
 
 	var details interface{}
