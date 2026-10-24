@@ -167,23 +167,6 @@ func (s *RuntimeIntelligenceService) evaluateRuntimeCompatibility(runtime *unstr
 		return match
 	}
 
-	// Check protocol versions (bonus for HTTP/REST support)
-	protocolVersions, found, err := unstructured.NestedSlice(spec, "protocolVersions")
-	if found && err == nil {
-		for _, pv := range protocolVersions {
-			pvMap, ok := pv.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			name, _ := pvMap["name"].(string)
-			if strings.Contains(strings.ToLower(name), "http") || strings.Contains(strings.ToLower(name), "rest") {
-				match.Score += 5
-				match.Reasons = append(match.Reasons, "Supports HTTP/REST protocol")
-				break
-			}
-		}
-	}
-
 	// Framework compatibility (if specified)
 	if modelFramework != "" {
 		// Check built-in adapters or container configurations for framework hints
