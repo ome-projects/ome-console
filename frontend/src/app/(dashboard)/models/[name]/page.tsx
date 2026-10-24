@@ -54,6 +54,7 @@ export default function ModelDetailPage() {
   // Use ConfigMap-based progress API for real-time updates
   const { data: progressData } = useModelProgress(
     name,
+    namespace,
     isDownloading // Only poll when downloading
   )
 

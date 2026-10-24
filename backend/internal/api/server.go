@@ -95,6 +95,7 @@ func (s *Server) SetupRoutes() *gin.Engine {
 				baseModels.POST("", modelsHandler.CreateBaseModel)
 				baseModels.PUT("/:name", modelsHandler.UpdateBaseModel)
 				baseModels.DELETE("/:name", modelsHandler.DeleteBaseModel)
+				baseModels.GET("/:name/progress", modelsHandler.GetProgress)
 			}
 		}
 
