@@ -33,10 +33,19 @@ export const runtimesApi = {
     return response.data
   },
 
-  /** Creates a ServingRuntime when the object carries `metadata.namespace`, else a ClusterServingRuntime. */
+  /**
+   * Creates a ServingRuntime in its `metadata.namespace` when `kind` is ServingRuntime, else a
+   * ClusterServingRuntime. The kind decides the scope, so an imported YAML is created as written.
+   */
   create: async (runtime: Partial<ClusterServingRuntime>): Promise<ClusterServingRuntime> => {
-    const namespace = runtime.metadata?.namespace
-    const path = namespace ? `/namespaces/${encodeURIComponent(namespace)}/runtimes` : '/runtimes'
+    let path = '/runtimes'
+    if (runtime.kind === 'ServingRuntime') {
+      const namespace = runtime.metadata?.namespace
+      if (!namespace) {
+        throw new Error(`ServingRuntime ${runtime.metadata?.name ?? ''} needs metadata.namespace`)
+      }
+      path = `/namespaces/${encodeURIComponent(namespace)}/runtimes`
+    }
     const response = await apiClient.post<ClusterServingRuntime>(path, runtime)
     return response.data
   },
