@@ -105,12 +105,17 @@ export function useModelEvents(name: string, enabled = true, refetchInterval?: n
  * Hook to fetch real-time download progress from ConfigMaps.
  * This reads directly from ConfigMaps written by model-agent daemonsets,
  * providing more reliable progress updates than K8s events.
- * Polls every 2 seconds when enabled.
+ * Polls every 2 seconds when enabled. Pass the namespace for a BaseModel.
  */
-export function useModelProgress(name: string, enabled = true, refetchInterval = 2000) {
+export function useModelProgress(
+  name: string,
+  namespace?: string,
+  enabled = true,
+  refetchInterval = 2000
+) {
   return useQuery<ModelProgressResponse>({
-    queryKey: [...queryKeys.detail(RESOURCE_KEY, name), 'progress'],
-    queryFn: () => modelsApi.getProgress(name),
+    queryKey: [...queryKeys.detail(RESOURCE_KEY, name, namespace), 'progress'],
+    queryFn: () => modelsApi.getProgress(name, namespace),
     enabled: !!name && enabled,
     staleTime: 1000, // Progress changes frequently during download
     gcTime: DEFAULT_QUERY_CONFIG.gcTime,

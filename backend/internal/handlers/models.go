@@ -422,11 +422,21 @@ type ModelInfoFromConfigMap struct {
 	} `json:"progress,omitempty"`
 }
 
-// GetProgress handles GET /api/v1/models/:name/progress
+// GetProgress handles GET /api/v1/models/:name/progress and, for a BaseModel,
+// GET /api/v1/namespaces/:namespace/models/:name/progress
 // Returns download progress from ConfigMaps written by model-agent daemonsets
 func (h *ModelsHandler) GetProgress(c *gin.Context) {
 	ctx := c.Request.Context()
 	modelName := c.Param("name")
+
+	// Key formats from constants.GetModelConfigMapKey (names short enough not to be truncated):
+	// - ClusterBaseModel: "clusterbasemodel.{model_name}"
+	// - BaseModel: "{namespace}.basemodel.{model_name}"
+	// Other keys in the same ConfigMaps, such as artifact.huggingface.*, are not models.
+	key := "clusterbasemodel." + modelName
+	if namespace := c.Param("namespace"); namespace != "" {
+		key = namespace + ".basemodel." + modelName
+	}
 
 	configMaps, err := h.k8sClient.GetModelStatusConfigMaps(ctx)
 	if err != nil {
@@ -445,50 +455,43 @@ func (h *ModelsHandler) GetProgress(c *gin.Context) {
 		}
 
 		// Look for the specific model in this ConfigMap's data
-		// Key formats from constants.GetModelConfigMapKey:
-		// - ClusterBaseModel: "clusterbasemodel.{model_name}"
-		// - BaseModel: "{namespace}.basemodel.{model_name}"
-		for key, value := range cm.Data {
-			// Check if this entry is for our model
-			clusterKey := "clusterbasemodel." + modelName
-			defaultNsKey := "default.basemodel." + modelName
-			if key != clusterKey && key != defaultNsKey {
-				continue
+		value, ok := cm.Data[key]
+		if !ok {
+			continue
+		}
+
+		var modelInfo ModelInfoFromConfigMap
+		if err := json.Unmarshal([]byte(value), &modelInfo); err != nil {
+			h.logger.Warn("Failed to parse model info from ConfigMap",
+				zap.String("node", nodeName),
+				zap.String("key", key),
+				zap.Error(err))
+			continue
+		}
+
+		// Only include if there's progress data
+		if modelInfo.Progress != nil {
+			percentage := float64(0)
+			if modelInfo.Progress.TotalBytes > 0 {
+				percentage = float64(modelInfo.Progress.CompletedBytes) / float64(modelInfo.Progress.TotalBytes) * 100
 			}
 
-			var modelInfo ModelInfoFromConfigMap
-			if err := json.Unmarshal([]byte(value), &modelInfo); err != nil {
-				h.logger.Warn("Failed to parse model info from ConfigMap",
-					zap.String("node", nodeName),
-					zap.String("key", key),
-					zap.Error(err))
-				continue
+			// Calculate remaining time from speed and remaining bytes
+			remainingTime := float64(0)
+			if modelInfo.Progress.SpeedBytesPerSec > 0 {
+				remainingBytes := modelInfo.Progress.TotalBytes - modelInfo.Progress.CompletedBytes
+				remainingTime = float64(remainingBytes) / modelInfo.Progress.SpeedBytesPerSec
 			}
 
-			// Only include if there's progress data
-			if modelInfo.Progress != nil {
-				percentage := float64(0)
-				if modelInfo.Progress.TotalBytes > 0 {
-					percentage = float64(modelInfo.Progress.CompletedBytes) / float64(modelInfo.Progress.TotalBytes) * 100
-				}
-
-				// Calculate remaining time from speed and remaining bytes
-				remainingTime := float64(0)
-				if modelInfo.Progress.SpeedBytesPerSec > 0 {
-					remainingBytes := modelInfo.Progress.TotalBytes - modelInfo.Progress.CompletedBytes
-					remainingTime = float64(remainingBytes) / modelInfo.Progress.SpeedBytesPerSec
-				}
-
-				progressList = append(progressList, NodeDownloadProgress{
-					Node:           nodeName,
-					Phase:          modelInfo.Progress.Phase,
-					TotalBytes:     modelInfo.Progress.TotalBytes,
-					CompletedBytes: modelInfo.Progress.CompletedBytes,
-					BytesPerSecond: modelInfo.Progress.SpeedBytesPerSec,
-					RemainingTime:  remainingTime,
-					Percentage:     percentage,
-				})
-			}
+			progressList = append(progressList, NodeDownloadProgress{
+				Node:           nodeName,
+				Phase:          modelInfo.Progress.Phase,
+				TotalBytes:     modelInfo.Progress.TotalBytes,
+				CompletedBytes: modelInfo.Progress.CompletedBytes,
+				BytesPerSecond: modelInfo.Progress.SpeedBytesPerSec,
+				RemainingTime:  remainingTime,
+				Percentage:     percentage,
+			})
 		}
 	}
 
