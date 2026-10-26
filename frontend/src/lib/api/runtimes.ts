@@ -50,13 +50,20 @@ export const runtimesApi = {
     return response.data
   },
 
+  /**
+   * Updates the ServingRuntime in `namespace`, else in `metadata.namespace` when `kind` is
+   * ServingRuntime, else the ClusterServingRuntime. As in `create`, the kind decides the scope.
+   */
   update: async (
     name: string,
     runtime: Partial<ClusterServingRuntime>,
     namespace?: string
   ): Promise<ClusterServingRuntime> => {
     const response = await apiClient.put<ClusterServingRuntime>(
-      runtimePath(name, namespace ?? runtime.metadata?.namespace),
+      runtimePath(
+        name,
+        namespace ?? (runtime.kind === 'ServingRuntime' ? runtime.metadata?.namespace : undefined)
+      ),
       runtime
     )
     return response.data
