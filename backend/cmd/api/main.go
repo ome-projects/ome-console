@@ -112,8 +112,8 @@ func main() {
 
 	logger.Info("Server shutting down...")
 
-	// Stop informers
-	logger.Info("Stopping informers...")
+	// Stop informers and end the SSE streams, so Shutdown below finds idle connections
+	logger.Info("Stopping informers and event streams...")
 	k8sClient.Stop()
 
 	// Graceful shutdown with timeout

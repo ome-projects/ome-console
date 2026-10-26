@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -75,6 +76,9 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	// Subscribe to events
 	eventChan := h.k8sClient.Broadcaster.Subscribe()
 	defer h.k8sClient.Broadcaster.Unsubscribe(eventChan)
+	// shutdown is closed by Broadcaster.Close. From then on queued events are dropped and nothing
+	// is written: the stream returns so http.Server.Shutdown sees an idle connection.
+	shutdown := h.k8sClient.Broadcaster.Done()
 
 	clientIP := c.ClientIP()
 	h.logger.Info("SSE client connected", zap.String("client_ip", clientIP))
@@ -82,16 +86,51 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	// Renew the write deadline before each write; without this the server's WriteTimeout
 	// would cut the stream. Writers that cannot set deadlines (tests) are left alone.
 	controller := http.NewResponseController(c.Writer)
-	extendDeadline := func() {
+	// A write to a stalled client blocks until that deadline. If shutdown starts during a write,
+	// the deadline is moved to now so the write returns; a stream that is idle at that moment is
+	// left alone so the response can end cleanly. Nothing is written once shutdown has started.
+	var mu sync.Mutex
+	frozen, writing := false, false
+	write := func(frame string) bool {
+		mu.Lock()
+		if frozen {
+			mu.Unlock()
+			return false
+		}
+		writing = true
 		if err := controller.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 			h.logger.Debug("Could not set SSE write deadline", zap.Error(err))
 		}
+		mu.Unlock()
+
+		_, _ = c.Writer.WriteString(frame)
+		c.Writer.Flush()
+
+		mu.Lock()
+		writing = false
+		mu.Unlock()
+		return true
 	}
+	// The request context ends when the client disconnects or when this handler returns.
+	ctx := c.Request.Context()
+	go func() {
+		select {
+		case <-shutdown:
+			mu.Lock()
+			frozen = true
+			if writing {
+				_ = controller.SetWriteDeadline(time.Now())
+			}
+			mu.Unlock()
+		case <-ctx.Done():
+		}
+	}()
 
 	// Send initial connection confirmation
-	extendDeadline()
-	fmt.Fprintf(c.Writer, "event: connected\ndata: {\"message\": \"Connected to event stream\"}\n\n")
-	c.Writer.Flush()
+	if !write("event: connected\ndata: {\"message\": \"Connected to event stream\"}\n\n") {
+		h.logger.Info("SSE stream ended for shutdown", zap.String("client_ip", clientIP))
+		return
+	}
 
 	// Create a ticker for periodic keep-alive messages
 	ticker := time.NewTicker(keepAliveInterval)
@@ -99,36 +138,29 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 
 	// Listen for events and send to client
 	for {
+		var frame string
 		select {
+		case <-shutdown:
 		case event, ok := <-eventChan:
 			if !ok {
-				// Channel closed, client disconnected
-				h.logger.Info("SSE event channel closed", zap.String("client_ip", clientIP))
-				return
+				// Only Close ends a subscription, so this is shutdown as well.
+				break
 			}
-
-			// Marshal event to JSON
 			data, err := json.Marshal(event)
 			if err != nil {
 				h.logger.Error("Failed to marshal event", zap.Error(err))
 				continue
 			}
-
-			// Send event to client
 			// Format: event: <event-type>\ndata: <json-data>\n\n
-			extendDeadline()
-			fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event.Type, data)
-			c.Writer.Flush()
-
+			frame = fmt.Sprintf("event: %s\ndata: %s\n\n", event.Type, data)
 		case <-ticker.C:
-			// Send keep-alive ping
-			extendDeadline()
-			fmt.Fprintf(c.Writer, "event: ping\ndata: {\"timestamp\": \"%s\"}\n\n", time.Now().Format(time.RFC3339))
-			c.Writer.Flush()
-
-		case <-c.Request.Context().Done():
-			// Client disconnected
+			frame = fmt.Sprintf("event: ping\ndata: {\"timestamp\": \"%s\"}\n\n", time.Now().Format(time.RFC3339))
+		case <-ctx.Done():
 			h.logger.Info("SSE client disconnected", zap.String("client_ip", clientIP))
+			return
+		}
+		if frame == "" || !write(frame) {
+			h.logger.Info("SSE stream ended for shutdown", zap.String("client_ip", clientIP))
 			return
 		}
 	}
