@@ -6,6 +6,9 @@ export * from './useAccelerators'
 export * from './useNamespaces'
 export * from './useHuggingFace'
 export * from './useCapabilities'
+export * from './useReplicas'
+export * from './useObjectEvents'
+export * from './useServiceLogs'
 
 // Utility hooks
 export * from './useServerEvents'
