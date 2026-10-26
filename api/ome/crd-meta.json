@@ -6481,6 +6481,10 @@
         "spec.routerConfig.autoscalerPolicyRef": [
           "name"
         ],
+        "spec.routerConfig.capacityEndpoint": [
+          "path",
+          "port"
+        ],
         "spec.routerConfig.containers[]": [
           "name"
         ],
@@ -8348,29 +8352,9 @@
           "rule": "!has(oldSelf.placement) || !has(oldSelf.placement.policy) || (has(self.placement) && has(self.placement.policy))"
         },
         {
-          "message": "componentAffinity needs an entry for each declared engine and decoder, and none for undeclared ones",
-          "path": "spec",
-          "rule": "!has(self.placement) || !has(self.placement.componentAffinity) || (has(self.placement.componentAffinity.engine) == has(self.engine) && has(self.placement.componentAffinity.decoder) == has(self.decoder))"
-        },
-        {
-          "message": "componentAffinity.router requires a declared router",
-          "path": "spec",
-          "rule": "!has(self.placement) || !has(self.placement.componentAffinity) || !has(self.placement.componentAffinity.router) || has(self.router)"
-        },
-        {
           "message": "replacementTimeout requires Single placement",
           "path": "spec.placement",
-          "rule": "!has(self.replacementTimeout) || (has(self.policy) && self.policy in ['ClusterAffinity', 'ComponentAffinity'] && has(self.mode) && self.mode == 'Single')"
-        },
-        {
-          "message": "componentAffinity is required by, and only valid with, the ComponentAffinity policy",
-          "path": "spec.placement",
-          "rule": "has(self.componentAffinity) == (has(self.policy) && self.policy == 'ComponentAffinity')"
-        },
-        {
-          "message": "the ComponentAffinity policy reads componentAffinity, not clusterAffinity",
-          "path": "spec.placement",
-          "rule": "!has(self.policy) || self.policy != 'ComponentAffinity' || !has(self.clusterAffinity)"
+          "rule": "!has(self.replacementTimeout) || (has(self.policy) && self.policy == 'ClusterAffinity' && has(self.mode) && self.mode == 'Single')"
         },
         {
           "message": "a cluster affinity term must contain a requirement",
@@ -8378,19 +8362,9 @@
           "rule": "(has(self.matchExpressions) && size(self.matchExpressions) > 0) || (has(self.matchFields) && size(self.matchFields) > 0)"
         },
         {
-          "message": "a cluster affinity term must contain a requirement",
-          "path": "spec.placement.componentAffinity.decoder[]",
-          "rule": "(has(self.matchExpressions) && size(self.matchExpressions) > 0) || (has(self.matchFields) && size(self.matchFields) > 0)"
-        },
-        {
-          "message": "a cluster affinity term must contain a requirement",
-          "path": "spec.placement.componentAffinity.engine[]",
-          "rule": "(has(self.matchExpressions) && size(self.matchExpressions) > 0) || (has(self.matchFields) && size(self.matchFields) > 0)"
-        },
-        {
-          "message": "a cluster affinity term must contain a requirement",
-          "path": "spec.placement.componentAffinity.router[]",
-          "rule": "(has(self.matchExpressions) && size(self.matchExpressions) > 0) || (has(self.matchFields) && size(self.matchFields) > 0)"
+          "message": "weight means weights.default; it may sit beside weights.decoder and weights.router, but not beside weights.default or weights.engine",
+          "path": "spec.placement.clusterAffinity[]",
+          "rule": "!has(self.weight) || !has(self.weights) || (!has(self.weights.default) && !has(self.weights.engine))"
         },
         {
           "message": "replacementTimeout must be a positive duration",
@@ -8415,7 +8389,7 @@
         {
           "message": "disabled must not be combined with capacity configuration fields",
           "path": "spec.routing.capacity",
-          "rule": "!(has(self.disabled) && self.disabled) || (!has(self.path) && !has(self.method) && !has(self.format) && !has(self.options) && !has(self.period) && !has(self.timeout) && !has(self.samples) && !has(self.quorum) && !has(self.maxAge))"
+          "rule": "!(has(self.disabled) && self.disabled) || (!has(self.path) && !has(self.method) && !has(self.format) && !has(self.mode) && !has(self.options) && !has(self.period) && !has(self.timeout) && !has(self.samples) && !has(self.quorum) && !has(self.maxAge))"
         },
         {
           "message": "an enabled capacity poll must specify path, method, format, period, timeout, samples, quorum, and maxAge",
@@ -8989,54 +8963,6 @@
           "Gt",
           "Lt"
         ],
-        "spec.placement.componentAffinity.decoder[].matchExpressions[].operator": [
-          "In",
-          "NotIn",
-          "Exists",
-          "DoesNotExist",
-          "Gt",
-          "Lt"
-        ],
-        "spec.placement.componentAffinity.decoder[].matchFields[].operator": [
-          "In",
-          "NotIn",
-          "Exists",
-          "DoesNotExist",
-          "Gt",
-          "Lt"
-        ],
-        "spec.placement.componentAffinity.engine[].matchExpressions[].operator": [
-          "In",
-          "NotIn",
-          "Exists",
-          "DoesNotExist",
-          "Gt",
-          "Lt"
-        ],
-        "spec.placement.componentAffinity.engine[].matchFields[].operator": [
-          "In",
-          "NotIn",
-          "Exists",
-          "DoesNotExist",
-          "Gt",
-          "Lt"
-        ],
-        "spec.placement.componentAffinity.router[].matchExpressions[].operator": [
-          "In",
-          "NotIn",
-          "Exists",
-          "DoesNotExist",
-          "Gt",
-          "Lt"
-        ],
-        "spec.placement.componentAffinity.router[].matchFields[].operator": [
-          "In",
-          "NotIn",
-          "Exists",
-          "DoesNotExist",
-          "Gt",
-          "Lt"
-        ],
         "spec.placement.mode": [
           "Single",
           "All",
@@ -9044,8 +8970,7 @@
           "SplitByCapacity"
         ],
         "spec.placement.policy": [
-          "ClusterAffinity",
-          "ComponentAffinity"
+          "ClusterAffinity"
         ],
         "spec.rollout.groupOrdering": [
           "Sequential",
@@ -9115,6 +9040,10 @@
           "GET",
           "HEAD",
           "POST"
+        ],
+        "spec.routing.capacity.mode": [
+          "Ceiling",
+          "Reported"
         ],
         "spec.routing.probe.allFailedPolicy": [
           "PreserveTraffic",
@@ -9265,6 +9194,11 @@
           "decoder",
           "router"
         ],
+        "status.placement.candidates[].componentFloors[].component": [
+          "engine",
+          "decoder",
+          "router"
+        ],
         "status.placement.candidates[].phase": [
           "Admitting",
           "Placed",
@@ -9357,6 +9291,16 @@
           "RollingUpdate",
           "Independent",
           "Sequential"
+        ],
+        "status.scalingPolicy.conditions[].status": [
+          "True",
+          "False",
+          "Unknown"
+        ],
+        "status.scalingPolicy.mode": [
+          "Independent",
+          "Proportional",
+          "Pinned"
         ],
         "status.traffic.conditions[].status": [
           "True",
@@ -9749,7 +9693,8 @@
         "status.rollout.activeRun.plan.groups[].group.canary.steps[].capacity",
         "status.rollout.activeRun.plan.groups[].group.rollingUpdate.maxSurge",
         "status.rollout.activeRun.plan.groups[].group.rollingUpdate.maxUnavailable",
-        "status.rolloutCoordination.groups[].observedSurge"
+        "status.rolloutCoordination.groups[].observedSurge",
+        "status.scalingPolicy.followers[].ratio"
       ],
       "listKind": "InferenceServiceList",
       "plural": "inferenceservices",
@@ -13566,30 +13511,6 @@
           "key",
           "operator"
         ],
-        "spec.placement.componentAffinity.decoder[].matchExpressions[]": [
-          "key",
-          "operator"
-        ],
-        "spec.placement.componentAffinity.decoder[].matchFields[]": [
-          "key",
-          "operator"
-        ],
-        "spec.placement.componentAffinity.engine[].matchExpressions[]": [
-          "key",
-          "operator"
-        ],
-        "spec.placement.componentAffinity.engine[].matchFields[]": [
-          "key",
-          "operator"
-        ],
-        "spec.placement.componentAffinity.router[].matchExpressions[]": [
-          "key",
-          "operator"
-        ],
-        "spec.placement.componentAffinity.router[].matchFields[]": [
-          "key",
-          "operator"
-        ],
         "spec.rollout.groups[]": [
           "components"
         ],
@@ -14452,6 +14373,11 @@
         "status.placement.candidates[].autoscaling.policies[]": [
           "name"
         ],
+        "status.placement.candidates[].componentFloors[]": [
+          "component",
+          "current",
+          "desired"
+        ],
         "status.placement.candidates[].rollout.activeGroups[]": [
           "source"
         ],
@@ -14541,6 +14467,18 @@
         ],
         "status.rolloutCoordination.groups[]": [
           "name"
+        ],
+        "status.scalingPolicy.conditions[]": [
+          "lastTransitionTime",
+          "message",
+          "reason",
+          "status",
+          "type"
+        ],
+        "status.scalingPolicy.followers[]": [
+          "component",
+          "ratio",
+          "target"
         ],
         "status.traffic.backendPolicyResource": [
           "apiVersion",
@@ -19847,6 +19785,10 @@
         "spec.routerConfig.autoscalerPolicyRef": [
           "name"
         ],
+        "spec.routerConfig.capacityEndpoint": [
+          "path",
+          "port"
+        ],
         "spec.routerConfig.containers[]": [
           "name"
         ],
@@ -20545,6 +20487,10 @@
         "spec.entries[].capacity.source": "ControlPlane"
       },
       "enums": {
+        "spec.capacityMode": [
+          "Ceiling",
+          "Reported"
+        ],
         "spec.entries[].capacity.source": [
           "ControlPlane",
           "Endpoint"
@@ -20568,7 +20514,8 @@
       },
       "group": "ome.io",
       "intOrString": [
-        "spec.entries[].capacity.factor"
+        "spec.entries[].capacity.factor",
+        "spec.entries[].capacity.reportedWeight"
       ],
       "listKind": "TrafficMapList",
       "plural": "trafficmaps",
