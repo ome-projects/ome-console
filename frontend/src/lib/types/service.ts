@@ -15,7 +15,11 @@ export type DecoderSpec = gen.DecoderSpec
 export type RouterSpec = gen.RouterSpec
 export type ComponentExtensionSpec = gen.ComponentExtensionSpec
 export type ComponentAutoscaler = gen.ComponentAutoscaler
+export type HPAAutoscaler = gen.HPAAutoscaler
+export type KedaAutoscaler = gen.KedaAutoscaler
+export type AutoscalerPolicyRef = gen.AutoscalerPolicyRef
 export type LifecycleSpec = gen.LifecycleSpec
+export type AcceleratorSelector = gen.AcceleratorSelector
 export type ComponentStatusSpec = gen.ComponentStatusSpec
 export type DeploymentMode = gen.InferenceServiceSpecDeploymentMode
 
