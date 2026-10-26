@@ -124,13 +124,6 @@ interface PodAffinityTerm {
   namespaces?: string[]
 }
 
-/** Metadata of a Kubernetes list response. */
-export interface ListMeta {
-  resourceVersion?: string
-  continue?: string
-  remainingItemCount?: number
-}
-
 export interface ListResponse<T> {
   items: T[]
   total: number

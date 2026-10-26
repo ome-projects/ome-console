@@ -26,22 +26,8 @@ make sync-ome-api                                       # re-generate the pinned
 ```
 
 The script resolves the ref to a commit, copies `swagger.json`, re-runs the
-extractor and rewrites `OME_VERSION`. Then run `make gen-types` to regenerate
-`frontend/src/lib/types/generated/ome.v1beta1.ts` from the new snapshot and fix
-whatever `make typecheck` reports. Commit `api/ome/` and the generated file in one
-change, so the vendored contract and the code that depends on it move together;
-CI runs `make verify-ome-api` to reject a stale generated file. `OME_REF` may be a
-tag or branch, but pin a full commit sha in the commit you send for review.
-
-## Generated TypeScript types
-
-`frontend/scripts/gen-ome-types.mjs` turns the snapshot into
-`frontend/src/lib/types/generated/ome.v1beta1.ts`: one interface per swagger
-definition with its documentation and required fields, a string-literal union for
-every enum the CRDs declare (`InferenceServiceSpecDeploymentMode`, with a matching
-`...Values` array for form selects), and `omeKinds`, the per-kind CRD metadata
-(plural, scope, short names, subresources, printer columns). Types from other API
-groups that the swagger references (core Kubernetes, knative, KEDA) map to the
-console's own types in `frontend/src/lib/types/common.ts`, to `string` where the
-wire format is a string, or to `OpaqueObject`; a reference the script does not
-know fails the run, so a bump can never silently produce `unknown`.
+extractor and rewrites `OME_VERSION`. Review the printed diff stat, then commit
+`api/ome/` together with the regenerated TypeScript types once the generator
+exists, so the vendored contract and the code that depends on it move in one
+change. `OME_REF` may be a tag or branch, but pin a full commit sha in the commit
+you send for review.

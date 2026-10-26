@@ -35,7 +35,7 @@ The console takes no Go dependency on OME. Instead, `api/ome/` vendors a pinned 
 make sync-ome-api OME_REF=<sha> OME_SRC=~/go/src/ome   # or omit OME_SRC to download from GitHub
 ```
 
-Then run `make gen-types` to regenerate `frontend/src/lib/types/generated/ome.v1beta1.ts`, fix what `make typecheck` reports, and commit `api/ome/` with the generated file in one PR; CI runs `make verify-ome-api` and rejects a stale generated file. The full CRD YAMLs are deliberately not vendored; see [api/ome/README.md](api/ome/README.md).
+Review the printed diff, then commit `api/ome/` together with the regenerated TypeScript types (once the generator exists) in one PR. The full CRD YAMLs are deliberately not vendored; see [api/ome/README.md](api/ome/README.md).
 
 ## Contributing Guidelines
 
