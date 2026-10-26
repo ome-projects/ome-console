@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap/zaptest"
@@ -66,6 +67,8 @@ func TestModelsHandler_CreateRemovesItsTokenSecretWhenTheModelIsRejected(t *test
 	client, dynamicClient := newStartedClient(t, served)
 	router, v1 := newRouter()
 	v1.POST("/namespaces/:namespace/models", NewModelsHandler(client, zaptest.NewLogger(t)).CreateBaseModel)
+	ctx := context.Background()
+	secrets := client.Clientset.CoreV1().Secrets("team-a")
 
 	rejectNext := true
 	dynamicClient.PrependReactor("create", "basemodels", func(k8stesting.Action) (bool, runtime.Object, error) {
@@ -80,8 +83,7 @@ func TestModelsHandler_CreateRemovesItsTokenSecretWhenTheModelIsRejected(t *test
 	body := []byte(`{"model": {"metadata": {"name": "llama"}}, "huggingfaceToken": "hf_secret"}`)
 	expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models", body, "application/json"),
 		http.StatusUnprocessableEntity, "INVALID")
-	_, err := client.Clientset.CoreV1().Secrets("team-a").Get(context.Background(), "llama-hf-token", metav1.GetOptions{})
-	if !apierrors.IsNotFound(err) {
+	if _, err := secrets.Get(ctx, "llama-hf-token", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("token secret should be removed with the rejected model, got %v", err)
 	}
 
@@ -89,9 +91,25 @@ func TestModelsHandler_CreateRemovesItsTokenSecretWhenTheModelIsRejected(t *test
 	if rec := do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models", body, "application/json"); rec.Code != http.StatusCreated {
 		t.Fatalf("retry: expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
+
+	// A Secret that existed before the request stays, even when the model is rejected.
+	kept := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "kept-hf-token"},
+		Data:       map[string][]byte{"token": []byte("hf_secret")},
+	}
+	if _, err := secrets.Create(ctx, kept, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	rejectNext = true
+	expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models",
+		[]byte(`{"model": {"metadata": {"name": "kept"}}, "huggingfaceToken": "hf_secret"}`), "application/json"),
+		http.StatusUnprocessableEntity, "INVALID")
+	if _, err := secrets.Get(ctx, "kept-hf-token", metav1.GetOptions{}); err != nil {
+		t.Fatalf("a secret that existed before the request was removed: %v", err)
+	}
 }
 
-func TestModelsHandler_CreateReusesOnlyTheConsolesTokenSecret(t *testing.T) {
+func TestModelsHandler_CreateWithAnExistingTokenSecret(t *testing.T) {
 	client, _ := newStartedClient(t, served, newObject("BaseModel", "team-a", "existing", nil))
 	router, v1 := newRouter()
 	v1.POST("/namespaces/:namespace/models", NewModelsHandler(client, zaptest.NewLogger(t)).CreateBaseModel)
@@ -102,36 +120,53 @@ func TestModelsHandler_CreateReusesOnlyTheConsolesTokenSecret(t *testing.T) {
 		return do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models",
 			[]byte(`{"model": {"metadata": {"name": "`+name+`"}}, "huggingfaceToken": "new"}`), "application/json")
 	}
-	token := func(name string) string {
+	get := func(name string) *corev1.Secret {
 		t.Helper()
 		secret, err := secrets.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			t.Fatalf("secret %s: %v", name, err)
 		}
-		return secret.StringData["token"]
+		return secret
+	}
+	// handMade adds a Secret the console did not create, as the API server returns it.
+	handMade := func(name, token string) {
+		t.Helper()
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Data:       map[string][]byte{"token": []byte(token)},
+		}
+		if _, err := secrets.Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// A token Secret the console left behind, e.g. for a deleted model, is reused.
+	// Any Secret that already holds the token is used as it is.
+	handMade("same-hf-token", "new")
+	if rec := create("same"); rec.Code != http.StatusCreated {
+		t.Fatalf("same: expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if secret := get("same-hf-token"); len(secret.Labels) != 0 || secret.StringData != nil {
+		t.Fatalf("same: secret was written to: %+v", secret)
+	}
+
+	// A token Secret the console left behind, e.g. for a deleted model, gets the new token.
 	if _, err := client.EnsureHuggingFaceTokenSecret(ctx, "orphan-hf-token", "team-a", "old"); err != nil {
 		t.Fatal(err)
 	}
 	if rec := create("orphan"); rec.Code != http.StatusCreated {
 		t.Fatalf("orphan: expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := token("orphan-hf-token"); got != "new" {
+	if got := get("orphan-hf-token").StringData["token"]; got != "new" {
 		t.Fatalf("orphan: token = %q, want the new one", got)
 	}
 
-	// A Secret the console did not create is left alone.
-	theirs := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "theirs-hf-token"},
-		StringData: map[string]string{"token": "theirs"},
+	// A Secret the console did not create that holds another token is left alone.
+	handMade("theirs-hf-token", "theirs")
+	body := expectError(t, create("theirs"), http.StatusConflict, "CONFLICT")
+	if msg, _ := body["message"].(string); !strings.Contains(msg, "spec.storage.key") {
+		t.Fatalf("theirs: the message should say how to use the secret, got %q", msg)
 	}
-	if _, err := secrets.Create(ctx, theirs, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	expectError(t, create("theirs"), http.StatusConflict, "ALREADY_EXISTS")
-	if got := token("theirs-hf-token"); got != "theirs" {
+	if got := string(get("theirs-hf-token").Data["token"]); got != "theirs" {
 		t.Fatalf("theirs: token = %q, want it unchanged", got)
 	}
 
@@ -140,7 +175,7 @@ func TestModelsHandler_CreateReusesOnlyTheConsolesTokenSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectError(t, create("existing"), http.StatusConflict, "ALREADY_EXISTS")
-	if got := token("existing-hf-token"); got != "old" {
+	if got := get("existing-hf-token").StringData["token"]; got != "old" {
 		t.Fatalf("existing: token = %q, want it unchanged", got)
 	}
 }

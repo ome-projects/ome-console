@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"maps"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,11 +16,11 @@ var huggingFaceTokenLabels = map[string]string{
 	"ome.io/secret-type":           "huggingface-token",
 }
 
-// EnsureHuggingFaceTokenSecret stores a HuggingFace token in the named Secret. It creates the
-// Secret, or updates a token Secret the console created earlier, such as one left behind by a
-// model create that failed or by a deleted model. A Secret the console did not create is never
-// changed; its AlreadyExists error is returned instead. created reports whether this call
-// created the Secret.
+// EnsureHuggingFaceTokenSecret stores a HuggingFace token in the named Secret and reports whether
+// this call created it. An existing Secret that already holds the token is used as it is,
+// whoever created it. One holding another token is updated only if the console created it, such
+// as one left behind by a model create that failed or by a deleted model; any other Secret is
+// never changed, and a Conflict error says how to use it instead.
 func (c *Client) EnsureHuggingFaceTokenSecret(ctx context.Context, secretName, namespace, token string) (created bool, err error) {
 	secrets := c.Clientset.CoreV1().Secrets(namespace)
 	_, createErr := secrets.Create(ctx, &corev1.Secret{
@@ -41,9 +42,14 @@ func (c *Client) EnsureHuggingFaceTokenSecret(ctx context.Context, secretName, n
 	if err != nil {
 		return false, err
 	}
+	if string(existing.Data["token"]) == token {
+		return false, nil
+	}
 	for key, value := range huggingFaceTokenLabels {
 		if existing.Labels[key] != value {
-			return false, createErr
+			return false, apierrors.NewConflict(corev1.Resource("secrets"), secretName, fmt.Errorf(
+				"it holds a different token and was not created by the console, so it is left unchanged; "+
+					"to use it, create the model without a token and with spec.storage.key set to %q", secretName))
 		}
 	}
 	existing.StringData = map[string]string{"token": token}

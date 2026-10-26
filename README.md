@@ -273,7 +273,7 @@ PUT    /api/v1/namespaces/:ns/models/:name     # Update BaseModel
 DELETE /api/v1/namespaces/:ns/models/:name     # Delete BaseModel
 ```
 
-A HuggingFace token on create is stored in a Secret named `<model>-hf-token` that `spec.storage.key` points to: in the BaseModel's namespace, or in `ome` for a ClusterBaseModel, which is where OME's model agent looks. A token Secret the console created earlier under that name, for example for a deleted model, is reused; any other Secret with that name, or an existing model, makes the create fail with a `409`. If the API server rejects the model, the Secret created for it is removed again.
+A HuggingFace token on create is stored in a Secret named `<model>-hf-token` that `spec.storage.key` points to: in the BaseModel's namespace, or in `ome` for a ClusterBaseModel, which is where OME's model agent looks. An existing Secret with that name is used as it is when it already holds the token. If it holds another token, it gets the new one only if the console created it, for example for a deleted model; otherwise, as with an existing model, the create fails with a `409`. If the API server rejects the model, a Secret created for it is removed again. To use an existing Secret without sending its token, omit `huggingfaceToken` and set `spec.storage.key` yourself.
 
 ### Runtimes
 ```
