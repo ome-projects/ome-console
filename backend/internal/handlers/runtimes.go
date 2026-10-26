@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,10 +12,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
-	"sigs.k8s.io/ome/ome-console/backend/internal/services"
+	"sigs.k8s.io/ome/ome-console/backend/internal/runtimeselect"
 )
 
 // Allowed hosts for YAML fetching - only trusted code hosting platforms.
@@ -30,20 +33,19 @@ const (
 // This prevents path traversal and injection attacks.
 var safePathPattern = regexp.MustCompile(`^[a-zA-Z0-9/_.\-]+$`)
 
-// RuntimesHandler handles HTTP requests for ClusterServingRuntime resources
+// errNoCompatibleRuntime is the cause of GetRecommendation's 404 when no runtime qualifies.
+var errNoCompatibleRuntime = errors.New("no compatible runtimes found")
+
+// RuntimesHandler handles HTTP requests for ClusterServingRuntime resources, and the runtime
+// selection endpoints built on package runtimeselect.
 type RuntimesHandler struct {
-	k8sClient    *k8s.Client
-	logger       *zap.Logger
-	intelligence *services.RuntimeIntelligenceService
+	k8sClient *k8s.Client
+	logger    *zap.Logger
 }
 
 // NewRuntimesHandler creates a new RuntimesHandler
 func NewRuntimesHandler(k8sClient *k8s.Client, logger *zap.Logger) *RuntimesHandler {
-	return &RuntimesHandler{
-		k8sClient:    k8sClient,
-		logger:       logger,
-		intelligence: services.NewRuntimeIntelligenceService(k8sClient, logger),
-	}
+	return &RuntimesHandler{k8sClient: k8sClient, logger: logger}
 }
 
 // List handles GET /api/v1/runtimes
@@ -363,98 +365,340 @@ func (h *RuntimesHandler) FetchYAML(c *gin.Context) {
 	})
 }
 
-// FindCompatibleRuntimes handles GET /api/v1/runtimes/compatible?format=<format>&framework=<framework>
-func (h *RuntimesHandler) FindCompatibleRuntimes(c *gin.Context) {
-	ctx := c.Request.Context()
-	modelFormat := c.Query("format")
-	modelFramework := c.Query("framework")
+// explainRequest is the body of POST /api/v1/runtimes/explain.
+type explainRequest struct {
+	// Namespace is the InferenceService's: its ServingRuntimes are considered, and a BaseModel
+	// reference is looked up in it.
+	Namespace string `json:"namespace"`
+	// Model is a BaseModel spec, recognized by its modelFormat, or a reference {name, kind} to a
+	// ClusterBaseModel (the default kind) or a BaseModel in Namespace.
+	Model map[string]interface{} `json:"model"`
+	// AcceleratorClasses and DeploymentMode are what the InferenceService would ask for.
+	AcceleratorClasses []string `json:"acceleratorClasses"`
+	DeploymentMode     string   `json:"deploymentMode"`
+}
 
-	if modelFormat == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Model format is required",
-		})
+// Explain handles POST /api/v1/runtimes/explain. It answers {items: [Candidate...]}: every
+// ClusterServingRuntime and every ServingRuntime in the namespace, in the order OME ranks them
+// for auto-selection, followed by the runtimes OME would not pick, each with the first rule it
+// fails in exclusion. Like OME's auto-selection, it reads each runtime's own spec, without
+// ome.io/inherit-from; CheckCompatibility reads the merged spec of a named runtime.
+func (h *RuntimesHandler) Explain(c *gin.Context) {
+	var req explainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
+	if req.DeploymentMode != "" && !runtimeselect.IsDeploymentMode(req.DeploymentMode) {
+		writeBadRequest(c, h.logger, "Invalid deployment mode",
+			fmt.Errorf("deploymentMode %q is not RawDeployment, OMENative, MultiNode or VirtualDeployment", req.DeploymentMode))
+		return
+	}
+	model, ok := h.explainModel(c, req.Namespace, req.Model)
+	if !ok {
+		return
+	}
+	runtimes, err := h.selectionRuntimes(req.Namespace)
+	if err != nil {
+		writeError(c, h.logger, "Failed to list runtimes", err)
+		return
+	}
+	items := runtimeselect.Explain(runtimes, runtimeselect.Request{
+		Model:              model,
+		AcceleratorClasses: req.AcceleratorClasses,
+		// The mode applies to the engine, which every InferenceService has. OME compares the
+		// decoder's mode only for an InferenceService with a decoder, which the body does not
+		// describe.
+		EngineMode: req.DeploymentMode,
+	})
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
 
-	matches, err := h.intelligence.FindCompatibleRuntimes(ctx, modelFormat, modelFramework)
+// explainModel resolves the model of an explain request. It writes the error response itself
+// and reports false when it did.
+func (h *RuntimesHandler) explainModel(c *gin.Context, namespace string, body map[string]interface{}) (runtimeselect.Model, bool) {
+	if _, isSpec := body["modelFormat"]; isSpec {
+		model, err := runtimeselect.ModelFromSpec(body)
+		if err != nil {
+			writeBadRequest(c, h.logger, "Invalid model", err)
+			return model, false
+		}
+		return model, true
+	}
+	name, _ := body["name"].(string)
+	if name == "" {
+		writeBadRequest(c, h.logger, "Invalid model", errors.New("model must be a BaseModel spec with modelFormat, or a reference {name, kind}"))
+		return runtimeselect.Model{}, false
+	}
+	var (
+		obj *unstructured.Unstructured
+		err error
+	)
+	switch kind, _ := body["kind"].(string); kind {
+	case "", k8s.ClusterBaseModelResource.Kind:
+		obj, err = h.k8sClient.Get(k8s.ClusterBaseModelResource, "", name)
+	case k8s.BaseModelResource.Kind:
+		if namespace == "" {
+			writeBadRequest(c, h.logger, "Invalid model", errors.New("a BaseModel reference needs a namespace"))
+			return runtimeselect.Model{}, false
+		}
+		obj, err = h.k8sClient.Get(k8s.BaseModelResource, namespace, name)
+	default:
+		writeBadRequest(c, h.logger, "Invalid model", fmt.Errorf("model kind %q is not BaseModel or ClusterBaseModel", kind))
+		return runtimeselect.Model{}, false
+	}
+	if err != nil {
+		writeError(c, h.logger, "Model not found", err)
+		return runtimeselect.Model{}, false
+	}
+	model, err := runtimeselect.ModelFromUnstructured(obj)
+	if err != nil {
+		writeBadRequest(c, h.logger, "Model cannot be matched", err)
+		return model, false
+	}
+	return model, true
+}
+
+// selectionRuntimes lists the runtimes auto-selection considers for an InferenceService in the
+// namespace: its ServingRuntimes, when a namespace is given, and the ClusterServingRuntimes.
+func (h *RuntimesHandler) selectionRuntimes(namespace string) ([]runtimeselect.Runtime, error) {
+	var runtimes []runtimeselect.Runtime
+	if namespace != "" {
+		namespaced, err := h.k8sClient.List(k8s.ServingRuntimeResource, namespace, nil)
+		if err != nil {
+			return nil, err
+		}
+		for i := range namespaced.Items {
+			runtimes = append(runtimes, runtimeselect.RuntimeFromUnstructured(&namespaced.Items[i]))
+		}
+	}
+	cluster, err := h.k8sClient.List(k8s.ClusterServingRuntimeResource, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	for i := range cluster.Items {
+		runtimes = append(runtimes, runtimeselect.RuntimeFromUnstructured(&cluster.Items[i]))
+	}
+	return runtimes, nil
+}
+
+// lookupRuntime finds the parents of an inheritance chain in the cache.
+func (h *RuntimesHandler) lookupRuntime(kind, namespace, name string) (*unstructured.Unstructured, bool, error) {
+	res := k8s.ClusterServingRuntimeResource
+	if kind == runtimeselect.KindServingRuntime {
+		res = k8s.ServingRuntimeResource
+	}
+	obj, err := h.k8sClient.Get(res, namespace, name)
+	if apierrors.IsNotFound(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return obj, true, nil
+}
+
+// legacyMatch is what the older endpoints answer with for one runtime: the whole object and its
+// evaluation. Score is the auto-selection score, so it is above 0 only for a runtime OME would
+// pick on its own.
+type legacyMatch struct {
+	Runtime        map[string]interface{} `json:"runtime"`
+	Score          int                    `json:"score"`
+	Reasons        []string               `json:"reasons"`
+	Warnings       []string               `json:"warnings,omitempty"`
+	Recommendation string                 `json:"recommendation"`
+}
+
+// legacyCheck is the answer of CheckCompatibility.
+type legacyCheck struct {
+	Compatible bool     `json:"compatible"`
+	Reasons    []string `json:"reasons"`
+	Warnings   []string `json:"warnings,omitempty"`
+	Score      int      `json:"score"`
+}
+
+func toLegacyMatch(obj map[string]interface{}, cand runtimeselect.Candidate) legacyMatch {
+	m := legacyMatch{Runtime: obj, Score: cand.Score, Reasons: cand.Reasons, Recommendation: "OME can auto-select this runtime for the model"}
+	switch {
+	case cand.Exclusion != "":
+		m.Recommendation = "This runtime does not support the model"
+		m.Warnings = []string{cand.Exclusion}
+	case !cand.AutoSelect:
+		// The last reason says why auto-selection skips the runtime; it reads as a warning.
+		m.Recommendation = "Compatible when named in spec.runtime.name; OME does not auto-select it"
+		if n := len(cand.Reasons); n > 0 {
+			m.Reasons, m.Warnings = cand.Reasons[:n-1], []string{cand.Reasons[n-1]}
+		}
+	}
+	return m
+}
+
+// namesOnlyModel is the model the older endpoints match on: a format and, optionally, a
+// framework known by name alone.
+func namesOnlyModel(format, framework string) runtimeselect.Model {
+	model := runtimeselect.Model{Format: runtimeselect.Versioned{Name: format}}
+	if framework != "" {
+		model.Framework = &runtimeselect.Versioned{Name: framework}
+	}
+	return model
+}
+
+// namesOnly drops from a runtime's entries what a caller that gives only names cannot state: the
+// version, architecture and quantization requirements, and the framework when the caller named
+// none. The entries then match on the format and framework names alone.
+func namesOnly(rt runtimeselect.Runtime, withFramework bool) runtimeselect.Runtime {
+	entries := make([]runtimeselect.Entry, len(rt.Entries))
+	for i, e := range rt.Entries {
+		e.Architecture, e.Quantization = nil, nil
+		if e.Format != nil {
+			format := *e.Format
+			format.Version = nil
+			e.Format = &format
+		}
+		switch {
+		case !withFramework:
+			e.Framework = nil
+		case e.Framework != nil:
+			framework := *e.Framework
+			framework.Version = nil
+			e.Framework = &framework
+		}
+		entries[i] = e
+	}
+	rt.Entries = entries
+	return rt
+}
+
+// compatibleByName evaluates the ClusterServingRuntimes against a model known by its format and
+// framework names and returns the compatible ones, best first.
+func (h *RuntimesHandler) compatibleByName(format, framework string) ([]legacyMatch, error) {
+	list, err := h.k8sClient.List(k8s.ClusterServingRuntimeResource, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	objects := make(map[string]map[string]interface{}, len(list.Items))
+	runtimes := make([]runtimeselect.Runtime, 0, len(list.Items))
+	for i := range list.Items {
+		obj := &list.Items[i]
+		objects[obj.GetName()] = obj.Object
+		runtimes = append(runtimes, namesOnly(runtimeselect.RuntimeFromUnstructured(obj), framework != ""))
+	}
+	matches := []legacyMatch{}
+	for _, cand := range runtimeselect.Explain(runtimes, runtimeselect.Request{Model: namesOnlyModel(format, framework)}) {
+		if cand.Compatible {
+			matches = append(matches, toLegacyMatch(objects[cand.Runtime.Name], cand))
+		}
+	}
+	return matches, nil
+}
+
+// requireFormat reads the format query parameter the older endpoints need, answering 400 without it.
+func (h *RuntimesHandler) requireFormat(c *gin.Context) (format, framework string, ok bool) {
+	format, framework = c.Query("format"), c.Query("framework")
+	if format == "" {
+		writeBadRequest(c, h.logger, "Model format is required", errors.New("query parameter format is required"))
+		return "", "", false
+	}
+	return format, framework, true
+}
+
+// FindCompatibleRuntimes handles GET /api/v1/runtimes/compatible?format=<format>&framework=<framework>.
+// It lists the ClusterServingRuntimes with an entry that names the format, and the framework when
+// one is given, best first in the order OME ranks them. The versions, architecture and
+// quantization an entry requires are not checked, since the caller cannot state the model's;
+// POST /runtimes/explain applies the full rules.
+func (h *RuntimesHandler) FindCompatibleRuntimes(c *gin.Context) {
+	format, framework, ok := h.requireFormat(c)
+	if !ok {
+		return
+	}
+	matches, err := h.compatibleByName(format, framework)
 	if err != nil {
 		writeError(c, h.logger, "Failed to find compatible runtimes", err)
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"matches": matches,
 		"total":   len(matches),
 	})
 }
 
-// CheckCompatibility handles GET /api/v1/runtimes/:name/compatibility?format=<format>&framework=<framework>
+// CheckCompatibility handles GET /api/v1/runtimes/:name/compatibility?format=<format>&framework=<framework>[&namespace=<ns>].
+// It checks the runtime the way OME checks one an InferenceService names: the
+// ClusterServingRuntime, or the ServingRuntime in namespace, with the spec it inherits through
+// ome.io/inherit-from. As with /runtimes/compatible, only the format and framework names are
+// matched.
 func (h *RuntimesHandler) CheckCompatibility(c *gin.Context) {
-	ctx := c.Request.Context()
-	name := c.Param("name")
-	modelFormat := c.Query("format")
-	modelFramework := c.Query("framework")
-
-	if modelFormat == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Model format is required",
-		})
+	format, framework, ok := h.requireFormat(c)
+	if !ok {
 		return
 	}
-
-	check, err := h.intelligence.CheckCompatibility(ctx, name, modelFormat, modelFramework)
+	namespace := c.Query("namespace")
+	res := k8s.ClusterServingRuntimeResource
+	if namespace != "" {
+		res = k8s.ServingRuntimeResource
+	}
+	obj, err := h.k8sClient.Get(res, namespace, c.Param("name"))
 	if err != nil {
-		writeError(c, h.logger, "Failed to check compatibility", err)
+		writeError(c, h.logger, "Runtime not found", err)
 		return
 	}
-
-	c.JSON(http.StatusOK, check)
+	resolved, _, err := runtimeselect.Resolve(obj, h.lookupRuntime)
+	if err != nil {
+		// OME cannot use a runtime whose chain does not resolve, which is what the caller asked.
+		c.JSON(http.StatusOK, legacyCheck{Reasons: []string{}, Warnings: []string{"inheritance chain cannot be resolved: " + err.Error()}})
+		return
+	}
+	cand := runtimeselect.Evaluate(namesOnly(runtimeselect.RuntimeFromUnstructured(resolved), framework != ""),
+		runtimeselect.Request{Model: namesOnlyModel(format, framework)})
+	m := toLegacyMatch(nil, cand)
+	c.JSON(http.StatusOK, legacyCheck{Compatible: cand.Compatible, Reasons: m.Reasons, Warnings: m.Warnings, Score: cand.Score})
 }
 
-// GetRecommendation handles GET /api/v1/runtimes/recommend?format=<format>&framework=<framework>
+// GetRecommendation handles GET /api/v1/runtimes/recommend?format=<format>&framework=<framework>.
+// It answers with the ClusterServingRuntime OME would auto-select for the model, matched as in
+// FindCompatibleRuntimes, or 404 when none qualifies.
 func (h *RuntimesHandler) GetRecommendation(c *gin.Context) {
-	ctx := c.Request.Context()
-	modelFormat := c.Query("format")
-	modelFramework := c.Query("framework")
-
-	if modelFormat == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Model format is required",
-		})
+	format, framework, ok := h.requireFormat(c)
+	if !ok {
 		return
 	}
-
-	recommendation, err := h.intelligence.GetRecommendation(ctx, modelFormat, modelFramework)
+	matches, err := h.compatibleByName(format, framework)
 	if err != nil {
-		writeError(c, h.logger, "No compatible runtime found", err)
+		writeError(c, h.logger, "Failed to find compatible runtimes", err)
 		return
 	}
-
-	c.JSON(http.StatusOK, recommendation)
+	for _, m := range matches {
+		if m.Score > 0 {
+			m.Recommendation = "Best match: the runtime OME would auto-select for the model"
+			c.JSON(http.StatusOK, m)
+			return
+		}
+	}
+	writeError(c, h.logger, "No compatible runtime found",
+		fmt.Errorf("%w for format=%s, framework=%s", errNoCompatibleRuntime, format, framework))
 }
 
-// ValidateConfiguration handles POST /api/v1/runtimes/validate
+// ValidateConfiguration handles POST /api/v1/runtimes/validate. It checks a runtime manifest
+// against the selection rules and answers {valid, errors, warnings}: errors for what the API
+// rejects or what can never match a model, warnings for what limits the runtime or what OME reads
+// differently from how it is written.
 func (h *RuntimesHandler) ValidateConfiguration(c *gin.Context) {
-	ctx := c.Request.Context()
-
 	var runtimeData map[string]interface{}
 	if err := c.ShouldBindJSON(&runtimeData); err != nil {
 		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
-
-	runtime := &unstructured.Unstructured{Object: runtimeData}
-
-	errors, warnings, err := h.intelligence.ValidateRuntimeConfiguration(ctx, runtime)
-	if err != nil {
-		writeError(c, h.logger, "Failed to validate configuration", err)
-		return
+	errs, warnings := []string{}, []string{}
+	if _, found := runtimeData["spec"]; !found {
+		errs = append(errs, "spec is required")
 	}
-
-	valid := len(errors) == 0
+	ruleErrs, ruleWarnings := runtimeselect.Validate(runtimeselect.RuntimeFromUnstructured(&unstructured.Unstructured{Object: runtimeData}))
+	errs = append(errs, ruleErrs...)
+	warnings = append(warnings, ruleWarnings...)
 	c.JSON(http.StatusOK, gin.H{
-		"valid":    valid,
-		"errors":   errors,
+		"valid":    len(errs) == 0,
+		"errors":   errs,
 		"warnings": warnings,
 	})
 }

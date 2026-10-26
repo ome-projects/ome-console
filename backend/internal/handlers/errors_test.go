@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
-	"sigs.k8s.io/ome/ome-console/backend/internal/services"
 )
 
 func TestClassifyError(t *testing.T) {
@@ -25,7 +24,7 @@ func TestClassifyError(t *testing.T) {
 		code   string
 	}{
 		{"not supported", fmt.Errorf("rolloutpolicies: %w", k8s.ErrNotSupported), http.StatusNotFound, "CAPABILITY_MISSING"},
-		{"no compatible runtime", fmt.Errorf("recommend: %w", services.ErrNoCompatibleRuntime), http.StatusNotFound, "NOT_FOUND"},
+		{"no compatible runtime", fmt.Errorf("recommend: %w", errNoCompatibleRuntime), http.StatusNotFound, "NOT_FOUND"},
 		{"not found", apierrors.NewNotFound(gr, "x"), http.StatusNotFound, "NOT_FOUND"},
 		{"already exists", apierrors.NewAlreadyExists(gr, "x"), http.StatusConflict, "ALREADY_EXISTS"},
 		{"conflict", apierrors.NewConflict(gr, "x", errors.New("stale")), http.StatusConflict, "CONFLICT"},

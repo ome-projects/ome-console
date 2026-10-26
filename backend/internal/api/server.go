@@ -107,6 +107,7 @@ func (s *Server) SetupRoutes() *gin.Engine {
 			runtimes.GET("/fetch-yaml", runtimesHandler.FetchYAML)
 			runtimes.GET("/compatible", runtimesHandler.FindCompatibleRuntimes)
 			runtimes.GET("/recommend", runtimesHandler.GetRecommendation)
+			runtimes.POST("/explain", runtimesHandler.Explain)
 			runtimes.POST("/validate", runtimesHandler.ValidateConfiguration)
 			runtimes.GET("/:name", runtimesHandler.Get)
 			runtimes.GET("/:name/compatibility", runtimesHandler.CheckCompatibility)
