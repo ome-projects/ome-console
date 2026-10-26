@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -168,5 +169,77 @@ func TestContainerFor(t *testing.T) {
 	first := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "only"}}}}
 	if got := containerFor(first, ""); got != "only" {
 		t.Fatalf("fallback container %q", got)
+	}
+}
+
+func TestReadLogLine(t *testing.T) {
+	r := bufio.NewReaderSize(strings.NewReader("first\nsecond"), 16)
+	line, complete, err := readLogLine(r, 1024)
+	if string(line) != "first" || !complete || err != nil {
+		t.Fatalf("first: %q %v %v", line, complete, err)
+	}
+	line, complete, err = readLogLine(r, 1024)
+	if string(line) != "second" || complete || err != io.EOF {
+		t.Fatalf("partial last line: %q %v %v", line, complete, err)
+	}
+
+	long := strings.Repeat("x", 40) + "\nafter\n"
+	r = bufio.NewReaderSize(strings.NewReader(long), 16)
+	line, complete, err = readLogLine(r, 10)
+	if string(line) != strings.Repeat("x", 10) || complete || err != nil {
+		t.Fatalf("cut line: %q %v %v", line, complete, err)
+	}
+	line, complete, err = readLogLine(r, 10)
+	if string(line) != "after" || !complete || err != nil {
+		t.Fatalf("line after the cut one: %q %v %v", line, complete, err)
+	}
+}
+
+func collectLines(t *testing.T, input string, limit int64) []streamedLine {
+	t.Helper()
+	var out []streamedLine
+	copyLogLines(context.Background(), strings.NewReader(input), "p0", "ome-container", limit, func(b []byte) bool {
+		var l streamedLine
+		if err := json.Unmarshal(b, &l); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, l)
+		return true
+	})
+	return out
+}
+
+func TestCopyLogLines_PartialLastLineAndLimitNotice(t *testing.T) {
+	type partialLine struct {
+		Line    string `json:"line"`
+		Partial bool   `json:"partial"`
+	}
+	complete := collectLines(t, "2026-10-26T12:00:00Z a\n2026-10-26T12:00:01Z b\n", 1<<20)
+	if len(complete) != 2 || complete[1].Line != "b" || complete[1].Notice != "" {
+		t.Fatalf("complete lines: %+v", complete)
+	}
+
+	// A short read that ends without a newline: the line is partial, but nowhere near the
+	// limit, so there is no truncation notice.
+	short := collectLines(t, "a\nb", 1<<20)
+	if len(short) != 2 || short[1].Line != "b" || short[1].Notice != "" {
+		t.Fatalf("short read: %+v", short)
+	}
+	var raw []byte
+	copyLogLines(context.Background(), strings.NewReader("a\nb"), "p0", "c", 1<<20, func(b []byte) bool { raw = b; return true })
+	var last partialLine
+	if err := json.Unmarshal(raw, &last); err != nil || !last.Partial {
+		t.Fatalf("last line not marked partial: %s", raw)
+	}
+
+	// A read cut by the byte limit: the partial line is followed by a notice.
+	limit := int64(1 << 20)
+	body := strings.Repeat("line\n", int(limit/5)) + "cut-mid"
+	cut := collectLines(t, body, limit)
+	if last := cut[len(cut)-1]; !strings.Contains(last.Notice, "cut at the 1 MiB") {
+		t.Fatalf("expected a limit notice, got %+v", last)
+	}
+	if prev := cut[len(cut)-2]; prev.Line != "cut-mid" {
+		t.Fatalf("expected the partial line before the notice, got %+v", prev)
 	}
 }

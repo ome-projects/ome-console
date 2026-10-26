@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -27,8 +30,11 @@ const (
 	// maxFollowDuration bounds a followed stream; the client reconnects for more.
 	maxFollowDuration = 10 * time.Minute
 	logWriteTimeout   = 30 * time.Second
-	// maxLogLineBytes is the longest log line the scanner accepts.
+	// maxLogLineBytes is the longest log line passed on whole; the rest of a longer line is dropped.
 	maxLogLineBytes = 1 << 20
+	// limitSlack is how far below LimitBytes a read may stop and still count as having hit the
+	// limit: the kubelet returns slightly more or less than asked.
+	limitSlack = 4096
 )
 
 // revisionHashPattern matches the hash in a revision name (<isvc>-<component>-rev-<hash>) and in
@@ -46,12 +52,14 @@ func NewLogsHandler(k8sClient *k8s.Client, logger *zap.Logger) *LogsHandler {
 	return &LogsHandler{k8sClient: k8sClient, logger: logger}
 }
 
-// logLine is one line of output, as NDJSON.
+// logLine is one line of output, as NDJSON. Partial marks a line that ended without a newline:
+// the last line of a read that hit the byte limit, or a line longer than maxLogLineBytes.
 type logLine struct {
 	Pod       string `json:"pod"`
 	Container string `json:"container"`
 	Timestamp string `json:"ts,omitempty"`
 	Line      string `json:"line"`
+	Partial   bool   `json:"partial,omitempty"`
 }
 
 // logNotice is an out-of-band message in the same stream: truncation or a pod whose logs could
@@ -198,20 +206,74 @@ func (h *LogsHandler) pump(ctx context.Context, namespace, pod string, opts *cor
 	}
 	defer rc.Close()
 
-	scanner := bufio.NewScanner(rc)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLogLineBytes)
-	for scanner.Scan() {
-		ts, text := splitLogTimestamp(scanner.Text())
-		b, err := json.Marshal(logLine{Pod: pod, Container: opts.Container, Timestamp: ts, Line: text})
-		if err != nil {
+	var limit int64
+	if opts.LimitBytes != nil {
+		limit = *opts.LimitBytes
+	}
+	copyLogLines(ctx, rc, pod, opts.Container, limit, send)
+}
+
+// copyLogLines turns the raw log stream into one JSON record per line. A final line without a
+// newline is passed on marked partial; when the read also stopped at the byte limit, a notice
+// says so, because the kubelet cuts the stream mid-line there.
+func copyLogLines(ctx context.Context, r io.Reader, pod, container string, limit int64, send func([]byte) bool) {
+	reader := bufio.NewReaderSize(r, 64*1024)
+	var read int64
+	for {
+		line, complete, err := readLogLine(reader, maxLogLineBytes)
+		read += int64(len(line))
+		if complete {
+			read++ // the newline
+		}
+		if len(line) > 0 || complete {
+			ts, text := splitLogTimestamp(string(line))
+			b, merr := json.Marshal(logLine{Pod: pod, Container: container, Timestamp: ts, Line: text, Partial: !complete})
+			if merr == nil && !send(b) {
+				return
+			}
+		}
+		if err == nil {
 			continue
 		}
-		if !send(b) {
+		if !errors.Is(err, io.EOF) {
+			if ctx.Err() == nil {
+				send(marshalNotice(logNotice{Pod: pod, Notice: "log stream ended: " + err.Error()}))
+			}
 			return
 		}
+		if !complete && len(line) > 0 && limit > 0 && read >= limit-limitSlack {
+			send(marshalNotice(logNotice{Pod: pod, Notice: fmt.Sprintf(
+				"output cut at the %d MiB per-pod limit; the last line is partial, use tailLines to narrow", limit>>20)}))
+		}
+		return
 	}
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		send(marshalNotice(logNotice{Pod: pod, Notice: "log stream ended: " + err.Error()}))
+}
+
+// readLogLine reads one line without its newline. complete is false when the input ended before
+// a newline, or when the line exceeded max bytes: the first max bytes are returned and the rest
+// of the line is dropped. err is io.EOF once the input is exhausted.
+func readLogLine(r *bufio.Reader, max int) (line []byte, complete bool, err error) {
+	cut := false
+	for {
+		chunk, rerr := r.ReadSlice('\n')
+		if !cut {
+			line = append(line, chunk...)
+			if len(line) > max {
+				line = line[:max]
+				cut = true
+			}
+		}
+		switch {
+		case rerr == nil:
+			if cut {
+				return line, false, nil
+			}
+			return bytes.TrimSuffix(line, []byte{'\n'}), true, nil
+		case errors.Is(rerr, bufio.ErrBufferFull):
+			continue
+		default:
+			return line, false, rerr
+		}
 	}
 }
 

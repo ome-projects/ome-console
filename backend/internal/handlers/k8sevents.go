@@ -50,9 +50,17 @@ func (h *ObjectEventsHandler) List(c *gin.Context) {
 // recorded through the events.k8s.io API carry eventTime and a series instead of the legacy
 // timestamps and count, so both forms are read.
 func toObjectEvents(items []corev1.Event) []ModelEvent {
-	out := make([]ModelEvent, 0, len(items))
+	// Order on the full-precision times; the response carries whole seconds.
+	sorted := make([]*corev1.Event, 0, len(items))
 	for i := range items {
-		e := &items[i]
+		sorted = append(sorted, &items[i])
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return eventLastSeen(sorted[i]).After(eventLastSeen(sorted[j]))
+	})
+
+	out := make([]ModelEvent, 0, len(sorted))
+	for _, e := range sorted {
 		out = append(out, ModelEvent{
 			Type:           e.Type,
 			Reason:         e.Reason,
@@ -63,8 +71,6 @@ func toObjectEvents(items []corev1.Event) []ModelEvent {
 			Source:         eventSource(e),
 		})
 	}
-	// Timestamps are RFC3339 in UTC, so string order is time order.
-	sort.SliceStable(out, func(i, j int) bool { return out[i].LastTimestamp > out[j].LastTimestamp })
 	return out
 }
 

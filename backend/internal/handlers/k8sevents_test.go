@@ -35,6 +35,13 @@ func TestObjectEvents_ListsNewestFirst(t *testing.T) {
 				Series:              &corev1.EventSeries{Count: 3, LastObservedTime: metav1.NewMicroTime(base.Add(5 * time.Minute))},
 				ReportingController: "ome-controller",
 			},
+			{
+				// Same second as the previous event's last observation, 400ms later: it must
+				// come first although the formatted timestamps are equal.
+				Type: "Normal", Reason: "Scheduled", Message: "newest, within the same second",
+				EventTime:           metav1.NewMicroTime(base.Add(5*time.Minute + 400*time.Millisecond)),
+				ReportingController: "default-scheduler",
+			},
 		}}, nil
 	})
 
@@ -57,10 +64,13 @@ func TestObjectEvents_ListsNewestFirst(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Total != 2 || len(body.Events) != 2 {
+	if body.Total != 3 || len(body.Events) != 3 {
 		t.Fatalf("got %d events: %+v", body.Total, body.Events)
 	}
-	newest, older := body.Events[0], body.Events[1]
+	if body.Events[0].Reason != "Scheduled" {
+		t.Fatalf("sub-second ordering lost: %+v", body.Events)
+	}
+	newest, older := body.Events[1], body.Events[2]
 	if newest.Reason != "Created" || newest.Count != 3 || newest.Source != "ome-controller" ||
 		newest.FirstTimestamp != "2026-10-26T12:02:00Z" || newest.LastTimestamp != "2026-10-26T12:05:00Z" {
 		t.Fatalf("events.k8s.io style event not converted: %+v", newest)
