@@ -200,22 +200,6 @@ export default function RuntimeDetailPage() {
                     </dd>
                   </div>
                 )}
-                {runtime.spec?.multiModel !== undefined && (
-                  <div>
-                    <dt className="text-xs font-medium text-gray-500">Multi-Model</dt>
-                    <dd className="mt-1">
-                      <span
-                        className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                          runtime.spec.multiModel
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {runtime.spec.multiModel ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </dd>
-                  </div>
-                )}
                 {runtime.metadata?.creationTimestamp && (
                   <div>
                     <dt className="text-xs font-medium text-gray-500">Created</dt>

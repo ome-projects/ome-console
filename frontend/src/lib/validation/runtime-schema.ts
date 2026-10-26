@@ -65,8 +65,6 @@ const componentConfigSchema = z
     worker: workerSpecSchema.optional(),
     minReplicas: z.number().optional(),
     maxReplicas: z.number().optional(),
-    scaleTarget: z.number().optional(),
-    scaleMetric: z.string().optional(),
     config: z.record(z.string(), z.string()).optional(),
     volumes: z.array(volumeSchema).optional(),
     initContainers: z.array(containerSchema).optional(),
