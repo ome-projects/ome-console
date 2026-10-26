@@ -16,6 +16,9 @@ import (
 type Server struct {
 	k8sClient *k8s.Client
 	logger    *zap.Logger
+	// MaxDecodedInstances bounds how many instance rows one InferenceReplica status may expand
+	// to in the replica endpoints; 0 selects the bound OME's CLI uses (20000).
+	MaxDecodedInstances uint64
 }
 
 // NewServer creates a new API server instance
@@ -135,6 +138,11 @@ func (s *Server) SetupRoutes() *gin.Engine {
 		// Pod logs of an InferenceService, newline-delimited JSON
 		logsHandler := handlers.NewLogsHandler(s.k8sClient, s.logger)
 		v1.GET("/namespaces/:namespace/services/:name/logs", logsHandler.Stream)
+
+		// InferenceReplicas with their instance rows decoded (ColumnarV2 expanded server-side)
+		replicasHandler := handlers.NewReplicasHandler(s.k8sClient, s.logger, s.MaxDecodedInstances)
+		v1.GET("/namespaces/:namespace/services/:name/replicas", replicasHandler.ListForService)
+		v1.GET("/namespaces/:namespace/replicas/:name/instances", replicasHandler.Instances)
 
 		// Accelerators endpoints
 		acceleratorsHandler := handlers.NewAcceleratorsHandler(s.k8sClient, s.logger)

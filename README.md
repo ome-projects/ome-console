@@ -193,6 +193,7 @@ make help
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Comma-separated allowed origins |
 | `INFORMER_SYNC_TIMEOUT` | `60s` | How long startup waits for the Kubernetes caches to fill before failing (Go duration) |
 | `OME_FIELD_VALIDATION` | `Strict` | API server field validation for writes: `Strict` rejects undeclared fields, `Warn` or `Ignore` lets them be pruned |
+| `OME_MAX_DECODED_INSTANCES` | `20000` | Most instance rows one InferenceReplica status may expand to in the replica endpoints (the bound OME's CLI uses) |
 
 ### Frontend Environment Variables
 
@@ -315,12 +316,16 @@ PATCH  /api/v1/namespaces/:ns/services/:name     # Patch InferenceService
 DELETE /api/v1/namespaces/:ns/services/:name     # Delete InferenceService
 GET    /api/v1/namespaces/:ns/services/:name/status
 GET    /api/v1/namespaces/:ns/services/:name/logs    # Pod logs as NDJSON; ?component=&instance=&revision=&container=&tailLines=500&follow=true
+GET    /api/v1/namespaces/:ns/services/:name/replicas  # The service's InferenceReplicas with their instance rows decoded
+GET    /api/v1/namespaces/:ns/replicas/:name/instances # One InferenceReplica with its instance rows decoded
 GET    /api/v1/namespaces/:ns/events?kind=&name=     # Kubernetes events recorded for one object, newest first
 GET    /api/v1/replicas                              # List InferenceReplicas across namespaces (OME v1.3; 404 CAPABILITY_MISSING otherwise)
 GET    /api/v1/namespaces/:ns/replicas[/:name]       # InferenceReplicas in a namespace, same verbs as services
 ```
 
 The single-object service routes also answer at `/api/v1/services/:name?namespace=<ns>`; a namespaced resource without a namespace is a `400`.
+
+The replica endpoints return each InferenceReplica as `{replica, encoding, instances, decodeError?}`: `replica` is the object without the fields that carry the rows, `encoding` is `DenseV1` or `ColumnarV2`, and `instances` is one row per instance (`index`, `phase`, revisions, pod counts, `operation`, `lastFailure`, ...), decoded with the codec ported from OME. A status that cannot be decoded is returned with `decodeError` and no rows.
 
 Logs are selected with the labels `kubectl ome logs` uses (`ome.io/inferenceservice`, `component`, `ome.io/managed-by=OMENative` with `ome.io/instance-index`, `ome.io/revision-hash`), read from the `ome-container` container unless `container=` says otherwise, and cover at most 20 pods (a `{"notice": ...}` line says when more matched). Each line is `{"pod", "container", "ts", "line"}`; `follow=true` streams for up to 10 minutes. The logs and events endpoints need RBAC to list `pods`, get `pods/log` and list `events` in the namespace.
 
