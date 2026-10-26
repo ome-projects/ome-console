@@ -4,6 +4,7 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -58,6 +59,25 @@ func (c *Client) ListBaseModels(ctx context.Context, namespace string) (*unstruc
 // GetBaseModel returns a specific BaseModel by name and namespace from cache
 func (c *Client) GetBaseModel(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
 	return c.getFromCache(BaseModelGVR, namespace, name)
+}
+
+// ModelExists reports whether a ClusterBaseModel, or a BaseModel in namespace when one is given,
+// exists. It asks the API server rather than the cache, so a model created moments ago counts;
+// only NotFound means absent.
+func (c *Client) ModelExists(ctx context.Context, namespace, name string) (bool, error) {
+	res := ClusterBaseModelResource
+	if namespace != "" {
+		res = BaseModelResource
+	}
+	// A cluster without the CRD answers NotFound too, which must not read as "no such model".
+	if err := c.requireSupported(res); err != nil {
+		return false, err
+	}
+	_, err := c.resourceClient(res, namespace).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // CreateBaseModel creates a new BaseModel in a namespace

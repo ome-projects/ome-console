@@ -62,6 +62,17 @@ func writeBadRequest(c *gin.Context, logger *zap.Logger, action string, err erro
 	})
 }
 
+// rejected reports whether the API server refused a request with a 4xx status, in which case
+// it stored nothing.
+func rejected(err error) bool {
+	var status apierrors.APIStatus
+	if !errors.As(err, &status) {
+		return false
+	}
+	code := status.Status().Code
+	return code >= http.StatusBadRequest && code < http.StatusInternalServerError
+}
+
 // classifyError maps an error to an HTTP status, a stable code and optional structured details.
 func classifyError(err error) (int, string, interface{}) {
 	if errors.Is(err, k8s.ErrNotSupported) {
