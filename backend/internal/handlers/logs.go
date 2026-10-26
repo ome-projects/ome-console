@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -220,11 +219,8 @@ func copyLogLines(ctx context.Context, r io.Reader, pod, container string, limit
 	reader := bufio.NewReaderSize(r, 64*1024)
 	var read int64
 	for {
-		line, complete, err := readLogLine(reader, maxLogLineBytes)
-		read += int64(len(line))
-		if complete {
-			read++ // the newline
-		}
+		line, complete, consumed, err := readLogLine(reader, maxLogLineBytes)
+		read += consumed
 		if len(line) > 0 || complete {
 			ts, text := splitLogTimestamp(string(line))
 			b, merr := json.Marshal(logLine{Pod: pod, Container: container, Timestamp: ts, Line: text, Partial: !complete})
@@ -250,12 +246,18 @@ func copyLogLines(ctx context.Context, r io.Reader, pod, container string, limit
 }
 
 // readLogLine reads one line without its newline. complete is false when the input ended before
-// a newline, or when the line exceeded max bytes: the first max bytes are returned and the rest
-// of the line is dropped. err is io.EOF once the input is exhausted.
-func readLogLine(r *bufio.Reader, max int) (line []byte, complete bool, err error) {
+// a newline, or when the line's content exceeded max bytes: the first max bytes are returned and
+// the rest of the line is dropped. consumed counts every byte taken from the reader, the newline
+// and dropped bytes included, so callers can compare it with the kubelet's byte limit. err is
+// io.EOF once the input is exhausted.
+func readLogLine(r *bufio.Reader, max int) (line []byte, complete bool, consumed int64, err error) {
 	cut := false
 	for {
 		chunk, rerr := r.ReadSlice('\n')
+		consumed += int64(len(chunk))
+		if rerr == nil {
+			chunk = chunk[:len(chunk)-1] // the newline is not part of the content
+		}
 		if !cut {
 			line = append(line, chunk...)
 			if len(line) > max {
@@ -265,14 +267,11 @@ func readLogLine(r *bufio.Reader, max int) (line []byte, complete bool, err erro
 		}
 		switch {
 		case rerr == nil:
-			if cut {
-				return line, false, nil
-			}
-			return bytes.TrimSuffix(line, []byte{'\n'}), true, nil
+			return line, !cut, consumed, nil
 		case errors.Is(rerr, bufio.ErrBufferFull):
 			continue
 		default:
-			return line, false, rerr
+			return line, false, consumed, rerr
 		}
 	}
 }

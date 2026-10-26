@@ -174,24 +174,43 @@ func TestContainerFor(t *testing.T) {
 
 func TestReadLogLine(t *testing.T) {
 	r := bufio.NewReaderSize(strings.NewReader("first\nsecond"), 16)
-	line, complete, err := readLogLine(r, 1024)
-	if string(line) != "first" || !complete || err != nil {
-		t.Fatalf("first: %q %v %v", line, complete, err)
+	line, complete, consumed, err := readLogLine(r, 1024)
+	if string(line) != "first" || !complete || consumed != 6 || err != nil {
+		t.Fatalf("first: %q %v %d %v", line, complete, consumed, err)
 	}
-	line, complete, err = readLogLine(r, 1024)
-	if string(line) != "second" || complete || err != io.EOF {
-		t.Fatalf("partial last line: %q %v %v", line, complete, err)
+	line, complete, consumed, err = readLogLine(r, 1024)
+	if string(line) != "second" || complete || consumed != 6 || err != io.EOF {
+		t.Fatalf("partial last line: %q %v %d %v", line, complete, consumed, err)
 	}
 
+	// A line of exactly max content bytes is complete; the newline does not count.
+	r = bufio.NewReaderSize(strings.NewReader("0123456789\n"), 16)
+	line, complete, consumed, err = readLogLine(r, 10)
+	if string(line) != "0123456789" || !complete || consumed != 11 || err != nil {
+		t.Fatalf("exact-max line: %q %v %d %v", line, complete, consumed, err)
+	}
+
+	// A longer line is cut at max; the dropped remainder still counts as consumed.
 	long := strings.Repeat("x", 40) + "\nafter\n"
 	r = bufio.NewReaderSize(strings.NewReader(long), 16)
-	line, complete, err = readLogLine(r, 10)
-	if string(line) != strings.Repeat("x", 10) || complete || err != nil {
-		t.Fatalf("cut line: %q %v %v", line, complete, err)
+	line, complete, consumed, err = readLogLine(r, 10)
+	if string(line) != strings.Repeat("x", 10) || complete || consumed != 41 || err != nil {
+		t.Fatalf("cut line: %q %v %d %v", line, complete, consumed, err)
 	}
-	line, complete, err = readLogLine(r, 10)
-	if string(line) != "after" || !complete || err != nil {
-		t.Fatalf("line after the cut one: %q %v %v", line, complete, err)
+	line, complete, consumed, err = readLogLine(r, 10)
+	if string(line) != "after" || !complete || consumed != 6 || err != nil {
+		t.Fatalf("line after the cut one: %q %v %d %v", line, complete, consumed, err)
+	}
+}
+
+func TestCopyLogLines_LimitNoticeCountsDroppedBytes(t *testing.T) {
+	// One line longer than maxLogLineBytes, cut by the kubelet at the byte limit: the dropped
+	// part must count towards the limit so the notice is still raised.
+	limit := int64(maxLogLineBytes + 4096)
+	body := strings.Repeat("y", int(limit))
+	lines := collectLines(t, body, limit)
+	if len(lines) != 2 || !strings.Contains(lines[1].Notice, "cut at the") {
+		t.Fatalf("want the cut line and a limit notice, got %+v", lines)
 	}
 }
 
