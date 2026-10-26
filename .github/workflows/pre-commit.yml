@@ -3,8 +3,8 @@ name: Pre-commit
 # Pull requests only. On a push to main the checkout leaves HEAD on the main
 # branch, which the no-commit-to-branch hook is designed to reject.
 on:
+  # Every pull request, whatever its base: stacked PRs are checked before their base merges.
   pull_request:
-    branches: [main, release-*]
     types: [opened, synchronize, reopened]
 
 permissions:
