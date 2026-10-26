@@ -1,23 +1,7 @@
-interface ModelFormat {
-  name?: string
-  modelFramework?: {
-    name: string
-    version?: string
-  }
-  modelArchitecture?: string
-  quantization?:
-    | string
-    | {
-        name: string
-        bits?: number
-      }
-  version?: string
-  autoSelect?: boolean
-  priority?: number
-}
+import type { SupportedModelFormat } from '@/lib/types/runtime'
 
 interface ModelFormatsDisplayProps {
-  formats: ModelFormat[]
+  formats: SupportedModelFormat[]
 }
 
 export function ModelFormatsDisplay({ formats }: ModelFormatsDisplayProps) {
@@ -54,11 +38,7 @@ export function ModelFormatsDisplay({ formats }: ModelFormatsDisplayProps) {
               {format.quantization && (
                 <div className="flex gap-2">
                   <span className="font-medium text-purple-700 min-w-[140px]">Quantization:</span>
-                  <span className="text-purple-900">
-                    {typeof format.quantization === 'string'
-                      ? format.quantization
-                      : `${format.quantization.name}${format.quantization.bits ? ` (${format.quantization.bits}-bit)` : ''}`}
-                  </span>
+                  <span className="text-purple-900">{format.quantization}</span>
                 </div>
               )}
               {format.version && (

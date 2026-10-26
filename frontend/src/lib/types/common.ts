@@ -131,6 +131,21 @@ export interface ListMeta {
   remainingItemCount?: number
 }
 
+/**
+ * A Kubernetes object as the console reads it back from the API: apiVersion, kind, metadata and
+ * spec are always present. The generated OME types mark them optional because the OpenAPI
+ * schema does, so this narrows a generated kind for use in the UI.
+ */
+export type Resource<T extends { spec?: unknown }> = Omit<
+  T,
+  'apiVersion' | 'kind' | 'metadata' | 'spec'
+> & {
+  apiVersion: string
+  kind: string
+  metadata: ObjectMeta
+  spec: NonNullable<T['spec']>
+}
+
 export interface ListResponse<T> {
   items: T[]
   total: number
