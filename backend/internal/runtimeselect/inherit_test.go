@@ -179,3 +179,45 @@ func mustJSON(u *unstructured.Unstructured) string {
 	}
 	return string(out)
 }
+
+// A chain that crosses into the cluster scope stays there: the ClusterServingRuntime's parent is
+// looked up among the ClusterServingRuntimes, never back in the child's namespace.
+func TestResolveStaysClusterScopedAfterClusterParent(t *testing.T) {
+	clusterRoot := runtimeObject(KindClusterServingRuntime, "", "root", "", map[string]any{
+		"modelSizeRange":   map[string]any{"min": "1B"},
+		"protocolVersions": []any{"cluster-root"},
+	})
+	namespacedImpostor := runtimeObject(KindServingRuntime, "team-a", "root", "", map[string]any{
+		"protocolVersions": []any{"namespaced-impostor"},
+	})
+	mid := runtimeObject(KindClusterServingRuntime, "", "mid", "root", map[string]any{
+		"modelSizeRange": map[string]any{"max": "8B"},
+	})
+	child := runtimeObject(KindServingRuntime, "team-a", "child", "mid", map[string]any{
+		"disabled": false,
+	})
+
+	merged, chain, err := Resolve(child, catalog(clusterRoot, namespacedImpostor, mid, child))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if strings.Join(chain, ">") != "root>mid>child" {
+		t.Fatalf("chain %v", chain)
+	}
+	protocols, _, _ := unstructured.NestedStringSlice(merged.Object, "spec", "protocolVersions")
+	if len(protocols) != 1 || protocols[0] != "cluster-root" {
+		t.Fatalf("the cluster root's spec must be merged, got protocolVersions %v", protocols)
+	}
+	size, _, _ := unstructured.NestedMap(merged.Object, "spec", "modelSizeRange")
+	if size["min"] != "1B" || size["max"] != "8B" {
+		t.Fatalf("size range %v", size)
+	}
+
+	// Same name in both scopes is not a cycle: a ServingRuntime inherits from the
+	// ClusterServingRuntime of its own name when the lookup finds no namespaced one (the lookup
+	// is namespaced first, so a catalog that holds the child itself would be a real cycle).
+	sameName := runtimeObject(KindServingRuntime, "team-b", "root", "root", nil)
+	if _, chain, err := Resolve(sameName, catalog(clusterRoot)); err != nil || strings.Join(chain, ">") != "root>root" {
+		t.Fatalf("same-name cross-scope chain: %v %v", chain, err)
+	}
+}

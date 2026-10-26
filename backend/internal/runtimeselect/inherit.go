@@ -34,7 +34,9 @@ func Resolve(u *unstructured.Unstructured, lookup Lookup) (*unstructured.Unstruc
 	}
 	chain := []*unstructured.Unstructured{u}
 	names := []string{u.GetName()}
-	visited := map[string]bool{u.GetName(): true}
+	// Visited runtimes are keyed by scope and name: a ServingRuntime and a ClusterServingRuntime
+	// may share a name without forming a cycle.
+	visited := map[string]bool{scopeKey(kind, namespace, u.GetName()): true}
 	for current := u; ; {
 		parentName := current.GetAnnotations()[AnnotationInheritFrom]
 		if parentName == "" {
@@ -43,17 +45,24 @@ func Resolve(u *unstructured.Unstructured, lookup Lookup) (*unstructured.Unstruc
 		if len(chain) >= MaxInheritanceDepth {
 			return nil, nil, fmt.Errorf("inheritance chain exceeds max depth %d (chain: %v)", MaxInheritanceDepth, names)
 		}
-		if visited[parentName] {
-			return nil, nil, fmt.Errorf("inheritance cycle detected: %v", append(names, parentName))
-		}
-		parent, err := findParent(lookup, kind, namespace, parentName)
+		parent, parentKind, err := findParent(lookup, kind, namespace, parentName)
 		if err != nil {
 			return nil, nil, err
 		}
 		if parent == nil {
 			return nil, nil, fmt.Errorf("inherit-from parent %q not found (chain so far: %v)", parentName, names)
 		}
-		visited[parentName] = true
+		// Once the chain reaches a ClusterServingRuntime it stays cluster-scoped: its parents are
+		// looked up among the ClusterServingRuntimes only.
+		kind, namespace = parentKind, ""
+		if parentKind == KindServingRuntime {
+			namespace = parent.GetNamespace()
+		}
+		key := scopeKey(kind, namespace, parentName)
+		if visited[key] {
+			return nil, nil, fmt.Errorf("inheritance cycle detected: %v", append(names, parentName))
+		}
+		visited[key] = true
 		chain = append(chain, parent)
 		names = append(names, parentName)
 		current = parent
@@ -77,20 +86,24 @@ func Resolve(u *unstructured.Unstructured, lookup Lookup) (*unstructured.Unstruc
 	return out, rootFirst, nil
 }
 
-// findParent looks the parent up in the scopes a runtime of the given kind inherits from. It
-// returns nil when the parent exists in none of them.
-func findParent(lookup Lookup, kind, namespace, name string) (*unstructured.Unstructured, error) {
+// findParent looks the parent up in the scopes a runtime of the given kind inherits from and
+// reports the scope it was found in. It returns nil when the parent exists in none of them.
+func findParent(lookup Lookup, kind, namespace, name string) (*unstructured.Unstructured, string, error) {
 	if kind == KindServingRuntime {
 		parent, found, err := lookup(KindServingRuntime, namespace, name)
 		if err != nil || found {
-			return parent, err
+			return parent, KindServingRuntime, err
 		}
 	}
 	parent, found, err := lookup(KindClusterServingRuntime, "", name)
 	if err != nil || !found {
-		return nil, err
+		return nil, "", err
 	}
-	return parent, nil
+	return parent, KindClusterServingRuntime, nil
+}
+
+func scopeKey(kind, namespace, name string) string {
+	return kind + "/" + namespace + "/" + name
 }
 
 // merge lays child over parent: maps merge field by field with the child's values winning, any
