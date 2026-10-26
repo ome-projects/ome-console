@@ -32,6 +32,9 @@ const (
 type EventBroadcaster struct {
 	mu        sync.RWMutex
 	listeners map[chan ResourceEvent]struct{}
+	// done is closed by Close. Streams select on it, so shutdown reaches them even while events
+	// are still queued on their channels.
+	done chan struct{}
 	// closed is set by Close. After that, Subscribe hands out closed channels and Broadcast
 	// reaches nobody, so a stream that starts during shutdown ends immediately.
 	closed bool
@@ -147,7 +150,13 @@ func NewClientWith(clientset kubernetes.Interface, dynamicClient dynamic.Interfa
 func NewEventBroadcaster() *EventBroadcaster {
 	return &EventBroadcaster{
 		listeners: make(map[chan ResourceEvent]struct{}),
+		done:      make(chan struct{}),
 	}
+}
+
+// Done returns a channel that is closed once Close has been called.
+func (eb *EventBroadcaster) Done() <-chan struct{} {
+	return eb.done
 }
 
 // Subscribe adds a listener to receive events. After Close it returns a channel that is already
@@ -178,8 +187,8 @@ func (eb *EventBroadcaster) Unsubscribe(ch chan ResourceEvent) {
 	close(ch)
 }
 
-// Close ends every subscription by closing its channel and makes later Subscribe calls return
-// closed channels. Calling it again is a no-op.
+// Close closes Done, ends every subscription by closing its channel, and makes later Subscribe
+// calls return closed channels. Calling it again is a no-op.
 func (eb *EventBroadcaster) Close() {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
@@ -188,6 +197,7 @@ func (eb *EventBroadcaster) Close() {
 		return
 	}
 	eb.closed = true
+	close(eb.done)
 	for ch := range eb.listeners {
 		delete(eb.listeners, ch)
 		close(ch)

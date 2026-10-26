@@ -24,9 +24,20 @@ func TestEventBroadcaster_CloseEndsSubscriptions(t *testing.T) {
 		}
 	}
 
+	select {
+	case <-eb.Done():
+		t.Fatal("Done closed before Close")
+	default:
+	}
+
 	eb.Close()
 	eb.Close() // a second Close is a no-op
 
+	select {
+	case <-eb.Done():
+	default:
+		t.Fatal("Done not closed by Close")
+	}
 	assertClosed(t, first)
 	assertClosed(t, second)
 	// A stream that starts during shutdown ends immediately.
