@@ -117,6 +117,16 @@ All submissions, including submissions by project members, require a code review
 * **Go** — add imports and run `go mod tidy` from `backend/`. To upgrade, use `go get example.com/pkg` for the latest version or `go get example.com/pkg@v1.2.3` for a specific one. The `go-mod-tidy` hook verifies `go.mod` and `go.sum` stay tidy.
 * **npm** — install from `frontend/` so `package-lock.json` is updated alongside `package.json`; commit both. The `npm-lockfile-sync` hook verifies they agree.
 
+## Releasing
+
+A release is a `vX.Y.Z` tag (`vX.Y.Z-rc.N` for a prerelease) with a GitHub Release. Nothing is built or pushed to a registry: people run the console from the tagged source.
+
+1. Pick the commit to release, normally the head of `main`, and check that CI passed on it.
+2. Push the tag (`git tag v0.1.0 <sha> && git push origin v0.1.0`), or run the **Release** workflow from the Actions tab with the tag. A manual run releases the head of the branch you run it from, and GitHub creates the tag when you publish.
+3. The [Release workflow](.github/workflows/release.yml) opens a draft listing the PRs merged since the previous release. Fill in the highlights and the OME versions you tested against, then publish it.
+
+The workflow stops if CI did not pass on the commit, and it never changes a release that already exists, so re-running it is safe.
+
 ## Proposing Substantial Changes
 
 For significant changes — a new major view, a change to how the console authenticates to the cluster, or anything that alters the contract with OME's CRDs — please open an issue describing the motivation and approach before sending a large PR. This saves rework if the direction needs discussion.
