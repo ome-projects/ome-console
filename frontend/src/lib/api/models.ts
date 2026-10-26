@@ -74,9 +74,11 @@ export const modelsApi = {
     return response.data
   },
 
-  // Get real-time download progress from ConfigMaps
-  getProgress: async (name: string): Promise<ModelProgressResponse> => {
-    const response = await apiClient.get<ModelProgressResponse>(`/models/${name}/progress`)
+  // Get real-time download progress from ConfigMaps; pass the namespace for a BaseModel
+  getProgress: async (name: string, namespace?: string): Promise<ModelProgressResponse> => {
+    const response = await apiClient.get<ModelProgressResponse>(
+      `${modelPath(name, namespace)}/progress`
+    )
     return response.data
   },
 }

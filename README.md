@@ -264,6 +264,7 @@ GET    /api/v1/models/:name              # Get ClusterBaseModel
 POST   /api/v1/models                    # Create ClusterBaseModel
 PUT    /api/v1/models/:name              # Update ClusterBaseModel
 DELETE /api/v1/models/:name              # Delete ClusterBaseModel
+GET    /api/v1/models/:name/progress     # Per-node download progress of a ClusterBaseModel
 
 # Namespace-scoped BaseModels
 GET    /api/v1/namespaces/:ns/models           # List BaseModels
@@ -271,6 +272,7 @@ GET    /api/v1/namespaces/:ns/models/:name     # Get BaseModel
 POST   /api/v1/namespaces/:ns/models           # Create BaseModel
 PUT    /api/v1/namespaces/:ns/models/:name     # Update BaseModel
 DELETE /api/v1/namespaces/:ns/models/:name     # Delete BaseModel
+GET    /api/v1/namespaces/:ns/models/:name/progress  # Per-node download progress of a BaseModel
 ```
 
 ### Runtimes
