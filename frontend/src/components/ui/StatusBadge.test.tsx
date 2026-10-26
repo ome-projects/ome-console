@@ -36,6 +36,35 @@ describe('StatusBadge', () => {
     expect(screen.getByText('Admitting')).toHaveClass('text-accent')
   })
 
+  it('colours OMENative instance phases, retry block states and migration phases', () => {
+    const { rerender } = render(<StatusBadge state="Updating" />)
+    expect(screen.getByText('Updating')).toHaveClass('text-accent')
+
+    rerender(<StatusBadge state="Restarting" />)
+    expect(screen.getByText('Restarting')).toHaveClass('text-warning')
+
+    rerender(<StatusBadge state="Migrating" />)
+    expect(screen.getByText('Migrating')).toHaveClass('text-accent')
+
+    rerender(<StatusBadge state="Deleting" />)
+    expect(screen.getByText('Deleting')).toHaveClass('text-muted-foreground')
+
+    rerender(<StatusBadge state="RetryInProgress" />)
+    expect(screen.getByText('Retry in progress')).toHaveClass('text-accent')
+
+    rerender(<StatusBadge state="Backoff" />)
+    expect(screen.getByText('Backoff')).toHaveClass('text-warning')
+
+    rerender(<StatusBadge state="SurgePending" />)
+    expect(screen.getByText('Surge pending')).toHaveClass('text-accent')
+
+    rerender(<StatusBadge state="Relocated" />)
+    expect(screen.getByText('Relocated')).toHaveClass('text-success')
+
+    rerender(<StatusBadge state="BlockedByFailedLoad" />)
+    expect(screen.getByText('Blocked by failed load')).toHaveClass('text-destructive')
+  })
+
   it('falls back to a neutral badge for unknown values and missing state', () => {
     const { rerender } = render(<StatusBadge state="SomethingNew" />)
     expect(screen.getByText('SomethingNew')).toHaveClass('text-muted-foreground')
