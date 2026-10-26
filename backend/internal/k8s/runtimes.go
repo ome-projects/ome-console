@@ -39,11 +39,6 @@ func (c *Client) CreateClusterServingRuntime(ctx context.Context, runtime *unstr
 	return c.DynamicClient.Resource(ClusterServingRuntimeGVR).Create(ctx, runtime, metav1.CreateOptions{})
 }
 
-// UpdateClusterServingRuntime updates an existing ClusterServingRuntime
-func (c *Client) UpdateClusterServingRuntime(ctx context.Context, runtime *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	return c.DynamicClient.Resource(ClusterServingRuntimeGVR).Update(ctx, runtime, metav1.UpdateOptions{})
-}
-
 // DeleteClusterServingRuntime deletes a ClusterServingRuntime by name
 func (c *Client) DeleteClusterServingRuntime(ctx context.Context, name string) error {
 	return c.DynamicClient.Resource(ClusterServingRuntimeGVR).Delete(ctx, name, metav1.DeleteOptions{})

@@ -99,40 +99,35 @@ func (h *RuntimesHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, runtime.Object)
 }
 
-// Create handles POST /api/v1/runtimes
+// Create handles POST /api/v1/runtimes. apiVersion and kind are stamped from the resource, so a
+// bare {metadata, spec} works. ?dryRun=true validates on the API server without persisting.
 func (h *RuntimesHandler) Create(c *gin.Context) {
-	ctx := c.Request.Context()
-
 	var runtimeData map[string]interface{}
 	if err := c.ShouldBindJSON(&runtimeData); err != nil {
 		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
+	opts, ok := parseWriteOptions(c, h.logger)
+	if !ok {
+		return
+	}
 
-	// Create unstructured object
 	runtime := &unstructured.Unstructured{Object: runtimeData}
-
-	// Set GVK if not present
-	if runtime.GetAPIVersion() == "" {
-		runtime.SetAPIVersion("ome.io/v1beta1")
-	}
-	if runtime.GetKind() == "" {
-		runtime.SetKind("ClusterServingRuntime")
-	}
-
-	created, err := h.k8sClient.CreateClusterServingRuntime(ctx, runtime)
+	created, err := h.k8sClient.Create(c.Request.Context(), k8s.ClusterServingRuntimeResource, "", runtime, opts)
 	if err != nil {
 		writeError(c, h.logger, "Failed to create runtime", err)
 		return
 	}
 
-	h.logger.Info("Runtime created successfully", zap.String("name", created.GetName()))
+	h.logger.Info("Runtime created successfully",
+		zap.String("name", created.GetName()),
+		zap.Bool("dryRun", opts.DryRun))
 	c.JSON(http.StatusCreated, created.Object)
 }
 
-// Update handles PUT /api/v1/runtimes/:name
+// Update handles PUT /api/v1/runtimes/:name. The body must carry the resourceVersion it was read
+// at. ?dryRun=true validates on the API server without persisting.
 func (h *RuntimesHandler) Update(c *gin.Context) {
-	ctx := c.Request.Context()
 	name := c.Param("name")
 
 	var runtimeData map[string]interface{}
@@ -140,28 +135,24 @@ func (h *RuntimesHandler) Update(c *gin.Context) {
 		writeBadRequest(c, h.logger, "Invalid request body", err)
 		return
 	}
-
-	// Create unstructured object
-	runtime := &unstructured.Unstructured{Object: runtimeData}
+	opts, ok := parseWriteOptions(c, h.logger)
+	if !ok {
+		return
+	}
 
 	// Ensure name matches
+	runtime := &unstructured.Unstructured{Object: runtimeData}
 	runtime.SetName(name)
 
-	// Set GVK if not present
-	if runtime.GetAPIVersion() == "" {
-		runtime.SetAPIVersion("ome.io/v1beta1")
-	}
-	if runtime.GetKind() == "" {
-		runtime.SetKind("ClusterServingRuntime")
-	}
-
-	updated, err := h.k8sClient.UpdateClusterServingRuntime(ctx, runtime)
+	updated, err := h.k8sClient.Update(c.Request.Context(), k8s.ClusterServingRuntimeResource, "", runtime, opts)
 	if err != nil {
 		writeError(c, h.logger, "Failed to update runtime", err)
 		return
 	}
 
-	h.logger.Info("Runtime updated successfully", zap.String("name", name))
+	h.logger.Info("Runtime updated successfully",
+		zap.String("name", name),
+		zap.Bool("dryRun", opts.DryRun))
 	c.JSON(http.StatusOK, updated.Object)
 }
 

@@ -82,9 +82,14 @@ func (h *ResourceHandler) requireNamespace(c *gin.Context) (string, bool) {
 	return ns, true
 }
 
-// writeOptions reads ?dryRun=, which must be true or false when present. Any other value is a
-// 400 rather than a real write, so a client that meant a dry run (dryRun=1) never persists.
+// writeOptions reads the request's write options; see parseWriteOptions.
 func (h *ResourceHandler) writeOptions(c *gin.Context) (k8s.WriteOptions, bool) {
+	return parseWriteOptions(c, h.logger)
+}
+
+// parseWriteOptions reads ?dryRun=, which must be true or false when present. Any other value
+// is a 400 rather than a real write, so a client that meant a dry run (dryRun=1) never persists.
+func parseWriteOptions(c *gin.Context, logger *zap.Logger) (k8s.WriteOptions, bool) {
 	raw, present := c.GetQuery("dryRun")
 	if !present || raw == "false" {
 		return k8s.WriteOptions{}, true
@@ -92,7 +97,7 @@ func (h *ResourceHandler) writeOptions(c *gin.Context) (k8s.WriteOptions, bool) 
 	if raw == "true" {
 		return k8s.WriteOptions{DryRun: true}, true
 	}
-	writeBadRequest(c, h.logger, "Invalid dryRun", fmt.Errorf("dryRun must be true or false, got %q", raw))
+	writeBadRequest(c, logger, "Invalid dryRun", fmt.Errorf("dryRun must be true or false, got %q", raw))
 	return k8s.WriteOptions{}, false
 }
 
