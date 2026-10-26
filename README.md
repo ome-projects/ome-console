@@ -48,7 +48,7 @@ Before you begin, ensure you have the following installed:
 
 | Tool | Version | Check Command |
 |------|---------|---------------|
-| Go | 1.24+ | `go version` |
+| Go | 1.26+ | `go version` |
 | Node.js | 18+ | `node --version` |
 | npm | 9+ | `npm --version` |
 | kubectl | Latest | `kubectl version --client` |
@@ -243,7 +243,7 @@ ome-console/
 - React Hook Form + Zod
 
 **Backend:**
-- Go 1.24+
+- Go 1.26+
 - Gin web framework
 - client-go (Kubernetes client)
 - Zap logger
