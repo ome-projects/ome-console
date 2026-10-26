@@ -19,10 +19,19 @@ import {
   helpTextClassName,
   arrayFieldStyles,
 } from '@/components/forms/styles'
-import type { ClusterBaseModel } from '@/lib/types/model'
-import { MODEL_FORMAT_OPTIONS, MODEL_FRAMEWORK_OPTIONS } from '@/lib/constants/model-options'
+import type { ClusterBaseModel, DownloadPolicy, ModelDistribution } from '@/lib/types/model'
+import {
+  MODEL_FORMAT_OPTIONS,
+  MODEL_FRAMEWORK_OPTIONS,
+  MODEL_DISTRIBUTION_OPTIONS,
+  MODEL_DISTRIBUTION_HELP,
+  DOWNLOAD_POLICY_OPTIONS,
+  DOWNLOAD_POLICY_HELP,
+} from '@/lib/constants/model-options'
+import { FormSelect } from '@/components/forms/FormSelect'
+import { NoDownloaderNote } from '@/components/forms/storage'
 import { Icons } from '@/components/ui/Icons'
-import { exportAsYaml } from '@/lib/utils'
+import { exportAsYaml, storageUriScheme } from '@/lib/utils'
 
 interface EditModelFormData {
   spec: {
@@ -30,6 +39,9 @@ interface EditModelFormData {
     modelParameterSize?: string
     modelFormat?: { name: string; version?: string }
     modelFramework?: { name?: string; version?: string }
+    /** '' leaves the field out, which OME reads as the default */
+    distribution?: ModelDistribution | ''
+    storage?: { downloadPolicy?: DownloadPolicy | '' }
   }
 }
 
@@ -124,6 +136,8 @@ export default function EditModelPage() {
             name: model.spec.modelFramework?.name || '',
             version: model.spec.modelFramework?.version || '',
           },
+          distribution: model.spec.distribution || '',
+          storage: { downloadPolicy: model.spec.storage?.downloadPolicy || '' },
         },
       })
 
@@ -184,6 +198,11 @@ export default function EditModelPage() {
                 version: data.spec.modelFramework.version || undefined,
               }
             : model.spec.modelFramework,
+          distribution: data.spec.distribution || undefined,
+          storage: {
+            ...model.spec.storage,
+            downloadPolicy: data.spec.storage?.downloadPolicy || undefined,
+          },
         },
       }
 
@@ -206,6 +225,14 @@ export default function EditModelPage() {
       />
     )
   }
+
+  const storageUri = model.spec.storage?.storageUri || ''
+  // pvc:// models can't use Sharded (ome/pkg/validation/basemodel.go)
+  const distributionOptions = MODEL_DISTRIBUTION_OPTIONS.map((option) =>
+    option.value === 'Sharded'
+      ? { ...option, disabled: storageUriScheme(storageUri) === 'pvc' }
+      : option
+  )
 
   return (
     <div className="min-h-screen bg-background">
@@ -282,11 +309,9 @@ export default function EditModelPage() {
             </div>
           </div>
 
-          {/* Storage (Read-only) */}
+          {/* Storage: the source is fixed; download policy and distribution can change */}
           <div className={sectionStyles.card}>
-            <h2 className={sectionStyles.header}>
-              Storage <span className="text-sm font-normal text-muted-foreground">(Read-only)</span>
-            </h2>
+            <h2 className={sectionStyles.header}>Storage</h2>
             <div className={gridStyles.cols2}>
               <div>
                 <label className={labelStyles.base}>Storage URI</label>
@@ -308,8 +333,24 @@ export default function EditModelPage() {
               </div>
             </div>
             <p className={helpTextClassName}>
-              Storage configuration cannot be changed. Delete and recreate to change storage.
+              The storage URI and path cannot be changed. Delete and recreate the model to change
+              where its weights come from.
             </p>
+            <NoDownloaderNote uriOrScheme={storageUri} className="mt-4" />
+            <div className={`${gridStyles.cols2} mt-4`}>
+              <FormSelect
+                label="Download Policy"
+                options={DOWNLOAD_POLICY_OPTIONS}
+                helpText={DOWNLOAD_POLICY_HELP}
+                {...register('spec.storage.downloadPolicy')}
+              />
+              <FormSelect
+                label="Distribution"
+                options={distributionOptions}
+                helpText={MODEL_DISTRIBUTION_HELP}
+                {...register('spec.distribution')}
+              />
+            </div>
           </div>
 
           {/* Model Format */}
