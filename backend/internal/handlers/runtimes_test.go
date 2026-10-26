@@ -1,14 +1,21 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap/zaptest"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
 )
 
 func TestRuntimesHandler_RecommendationWithoutMatchIsNotFound(t *testing.T) {
@@ -386,4 +393,91 @@ func TestRuntimesHandler_ValidateConfiguration(t *testing.T) {
 	}
 	expectError(t, do(t, router, http.MethodPost, "/api/v1/runtimes/validate", []byte(`not json`), "application/json"),
 		http.StatusBadRequest, "BAD_REQUEST")
+}
+
+// recordingDynamic wraps the fake dynamic client to observe the write options a handler sends,
+// which the fake drops, and to answer a dry run without storing anything, as the API server does.
+type recordingDynamic struct {
+	dynamic.Interface
+	dryRuns *[]bool
+}
+
+func (r recordingDynamic) Resource(gvr schema.GroupVersionResource) dynamic.NamespaceableResourceInterface {
+	return recordingResource{NamespaceableResourceInterface: r.Interface.Resource(gvr), dryRuns: r.dryRuns}
+}
+
+type recordingResource struct {
+	dynamic.NamespaceableResourceInterface
+	dryRuns *[]bool
+}
+
+func (r recordingResource) Create(ctx context.Context, obj *unstructured.Unstructured, opts metav1.CreateOptions, subresources ...string) (*unstructured.Unstructured, error) {
+	dryRun := len(opts.DryRun) > 0
+	*r.dryRuns = append(*r.dryRuns, dryRun)
+	if dryRun {
+		return obj, nil
+	}
+	return r.NamespaceableResourceInterface.Create(ctx, obj, opts, subresources...)
+}
+
+func (r recordingResource) Update(ctx context.Context, obj *unstructured.Unstructured, opts metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error) {
+	dryRun := len(opts.DryRun) > 0
+	*r.dryRuns = append(*r.dryRuns, dryRun)
+	if dryRun {
+		return obj, nil
+	}
+	return r.NamespaceableResourceInterface.Update(ctx, obj, opts, subresources...)
+}
+
+// The cluster-scoped runtime writes honour ?dryRun= like the generic resource routes: the
+// option reaches the API server, a dry run stores nothing, and an invalid value never writes.
+func TestRuntimesHandler_WritesHonourDryRun(t *testing.T) {
+	client, dynamicClient := newStartedClient(t, served)
+	var dryRuns []bool
+	client.DynamicClient = recordingDynamic{Interface: dynamicClient, dryRuns: &dryRuns}
+
+	router, v1 := newRouter()
+	handler := NewRuntimesHandler(client, zaptest.NewLogger(t))
+	v1.POST("/runtimes", handler.Create)
+	v1.PUT("/runtimes/:name", handler.Update)
+
+	gvr := k8s.ClusterServingRuntimeResource.GVR()
+	body := []byte(`{"metadata":{"name":"vllm"},"spec":{"supportedModelFormats":[{"modelFormat":{"name":"safetensors"},"modelFramework":{"name":"transformers"}}]}}`)
+
+	rec := do(t, router, http.MethodPost, "/api/v1/runtimes?dryRun=true", body, "application/json")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("dry-run create: %d %s", rec.Code, rec.Body.String())
+	}
+	created := decode(t, rec)
+	if created["apiVersion"] != k8s.OMEGroupVersion || created["kind"] != "ClusterServingRuntime" {
+		t.Fatalf("apiVersion/kind not stamped: %v", created)
+	}
+	if _, err := dynamicClient.Tracker().Get(gvr, "", "vllm"); err == nil {
+		t.Fatal("dry-run create persisted the runtime")
+	}
+
+	rec = do(t, router, http.MethodPost, "/api/v1/runtimes", body, "application/json")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := dynamicClient.Tracker().Get(gvr, "", "vllm"); err != nil {
+		t.Fatalf("create did not persist the runtime: %v", err)
+	}
+
+	rec = do(t, router, http.MethodPut, "/api/v1/runtimes/vllm?dryRun=true", body, "application/json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dry-run update: %d %s", rec.Code, rec.Body.String())
+	}
+
+	expectError(t, do(t, router, http.MethodPost, "/api/v1/runtimes?dryRun=1", body, "application/json"),
+		http.StatusBadRequest, "BAD_REQUEST")
+	expectError(t, do(t, router, http.MethodPut, "/api/v1/runtimes/vllm?dryRun=True", body, "application/json"),
+		http.StatusBadRequest, "BAD_REQUEST")
+	expectError(t, do(t, router, http.MethodPost, "/api/v1/runtimes",
+		[]byte(`{"metadata":{"name":"vllm","namespace":"team-a"},"spec":{}}`), "application/json"),
+		http.StatusBadRequest, "BAD_REQUEST")
+
+	if want := []bool{true, false, true}; !reflect.DeepEqual(dryRuns, want) {
+		t.Fatalf("dry runs sent to the API server: got %v, want %v", dryRuns, want)
+	}
 }

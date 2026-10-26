@@ -281,8 +281,8 @@ A HuggingFace token on create is stored in a Secret named `<model>-hf-token` tha
 ```
 GET    /api/v1/runtimes                  # List ClusterServingRuntimes (?namespace= lists ServingRuntimes instead)
 GET    /api/v1/runtimes/:name            # Get ClusterServingRuntime
-POST   /api/v1/runtimes                  # Create ClusterServingRuntime
-PUT    /api/v1/runtimes/:name            # Update ClusterServingRuntime
+POST   /api/v1/runtimes                  # Create ClusterServingRuntime (?dryRun=true validates only)
+PUT    /api/v1/runtimes/:name            # Update ClusterServingRuntime (body carries resourceVersion)
 DELETE /api/v1/runtimes/:name            # Delete ClusterServingRuntime
 POST   /api/v1/runtimes/:name/clone      # Clone a runtime
 POST   /api/v1/runtimes/explain          # Rank runtimes for a model by OME's selection rules (body below)
