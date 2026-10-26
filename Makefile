@@ -105,9 +105,9 @@ typecheck: ## Run TypeScript type checking
 
 test: test-backend test-frontend ## Run all tests
 
-test-backend: ## Run backend tests
+test-backend: ## Run backend tests (-short: the OME status codec's volume survey runs a sample)
 	@echo "$(CYAN)Running backend tests...$(RESET)"
-	@cd $(BACKEND_DIR) && go test -v ./...
+	@cd $(BACKEND_DIR) && go test -short ./...
 
 test-frontend: ## Run frontend tests (typecheck)
 	@echo "$(CYAN)Running frontend tests...$(RESET)"

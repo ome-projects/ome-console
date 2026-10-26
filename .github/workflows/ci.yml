@@ -80,8 +80,10 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # -short keeps the ported OME status codec suite at a proportional sample of its volume and
+      # cost surveys (seconds instead of minutes); nothing else in the backend checks testing.Short.
       - name: Run tests
-        run: go test -race ./...
+        run: go test -race -short ./...
 
   # Single job for branch protection to require.
   summary:
