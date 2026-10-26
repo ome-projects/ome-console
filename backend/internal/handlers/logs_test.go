@@ -1,0 +1,172 @@
+package handlers
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"go.uber.org/zap/zaptest"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
+)
+
+func newLogsRouter(t *testing.T, podCount int) (http.Handler, *k8s.Client) {
+	t.Helper()
+	client, _ := newStartedClient(t, nil)
+	cs := client.Clientset.(*k8sfake.Clientset)
+	for i := 0; i < podCount; i++ {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("llama-engine-%02d", i),
+				Namespace: "team-a",
+				Labels:    map[string]string{k8s.InferenceServiceLabel: "llama", k8s.ComponentLabel: "engine"},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "sidecar"}, {Name: k8s.MainContainerName}}},
+		}
+		if _, err := cs.CoreV1().Pods("team-a").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	router, v1 := newRouter()
+	v1.GET("/namespaces/:namespace/services/:name/logs", NewLogsHandler(client, zaptest.NewLogger(t)).Stream)
+	return router, client
+}
+
+type streamedLine struct {
+	Pod       string `json:"pod"`
+	Container string `json:"container"`
+	Line      string `json:"line"`
+	Notice    string `json:"notice"`
+}
+
+func readLines(t *testing.T, body string) []streamedLine {
+	t.Helper()
+	var lines []streamedLine
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	for scanner.Scan() {
+		var l streamedLine
+		if err := json.Unmarshal(scanner.Bytes(), &l); err != nil {
+			t.Fatalf("line %q is not JSON: %v", scanner.Text(), err)
+		}
+		lines = append(lines, l)
+	}
+	return lines
+}
+
+func TestLogsStream_OneLinePerPodLine(t *testing.T) {
+	router, _ := newLogsRouter(t, 2)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/namespaces/team-a/services/llama/logs", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/x-ndjson" {
+		t.Fatalf("content type %q", ct)
+	}
+
+	lines := readLines(t, w.Body.String())
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want one per pod: %+v", len(lines), lines)
+	}
+	seen := map[string]bool{}
+	for _, l := range lines {
+		// The fake clientset answers every log request with "fake logs".
+		if l.Line != "fake logs" || l.Container != k8s.MainContainerName {
+			t.Fatalf("unexpected line %+v", l)
+		}
+		seen[l.Pod] = true
+	}
+	if !seen["llama-engine-00"] || !seen["llama-engine-01"] {
+		t.Fatalf("pods missing from the stream: %+v", lines)
+	}
+}
+
+func TestLogsStream_LimitsPodsWithNotice(t *testing.T) {
+	router, _ := newLogsRouter(t, k8s.MaxLogPods+5)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/namespaces/team-a/services/llama/logs", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	lines := readLines(t, w.Body.String())
+	if len(lines) != k8s.MaxLogPods+1 || !strings.Contains(lines[0].Notice, "first 20 pods") {
+		t.Fatalf("want a notice then %d lines, got %d: first=%+v", k8s.MaxLogPods, len(lines), lines[0])
+	}
+}
+
+func TestLogsStream_NoPodsIs404(t *testing.T) {
+	router, _ := newLogsRouter(t, 2)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/namespaces/team-a/services/llama/logs?component=router", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status %d, want 404: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLogsStream_RejectsBadParameters(t *testing.T) {
+	router, _ := newLogsRouter(t, 1)
+	for _, query := range []string{"?instance=abc", "?instance=-1", "?revision=BAD_REV", "?tailLines=-1", "?tailLines=99999"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/namespaces/team-a/services/llama/logs"+query, nil))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("query %q: status %d, want 400", query, w.Code)
+		}
+	}
+}
+
+func TestRevisionHash(t *testing.T) {
+	cases := map[string]struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		"bare hash":     {"a1b2c3d4", "a1b2c3d4", true},
+		"revision name": {"llama-engine-rev-a1b2c3d4", "a1b2c3d4", true},
+		"uppercase":     {"A1B2C3D4", "", false},
+		"empty hash":    {"llama-engine-rev-", "", false},
+		"underscore":    {"bad_rev", "", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, ok := revisionHash(tc.in)
+			if got != tc.want || ok != tc.ok {
+				t.Fatalf("revisionHash(%q) = %q, %v; want %q, %v", tc.in, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+func TestSplitLogTimestamp(t *testing.T) {
+	ts, line := splitLogTimestamp("2026-10-26T12:00:00.123456789Z INFO ready")
+	if ts != "2026-10-26T12:00:00.123456789Z" || line != "INFO ready" {
+		t.Fatalf("got %q, %q", ts, line)
+	}
+	ts, line = splitLogTimestamp("no timestamp here")
+	if ts != "" || line != "no timestamp here" {
+		t.Fatalf("got %q, %q", ts, line)
+	}
+}
+
+func TestContainerFor(t *testing.T) {
+	pod := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "sidecar"}, {Name: k8s.MainContainerName}}}}
+	if got := containerFor(pod, ""); got != k8s.MainContainerName {
+		t.Fatalf("default container %q", got)
+	}
+	if got := containerFor(pod, "sidecar"); got != "sidecar" {
+		t.Fatalf("requested container %q", got)
+	}
+	first := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "only"}}}}
+	if got := containerFor(first, ""); got != "only" {
+		t.Fatalf("fallback container %q", got)
+	}
+}

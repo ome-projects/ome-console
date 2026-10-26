@@ -17,6 +17,8 @@ var coreInformers = []OMEResource{
 	ServingRuntimeResource,
 	InferenceServiceResource,
 	AcceleratorClassResource,
+	// Only served by OME v1.3 clusters; discovery skips it elsewhere.
+	InferenceReplicaResource,
 }
 
 // SetupInformers registers an informer for every core OME resource the cluster serves, plus the

@@ -123,6 +123,18 @@ func (s *Server) SetupRoutes() *gin.Engine {
 		// Namespace-scoped ServingRuntimes: /namespaces/:namespace/runtimes[/:name]
 		handlers.NewResourceHandler(s.k8sClient, k8s.ServingRuntimeResource, s.logger).Mount(v1, false)
 
+		// InferenceReplicas (OMENative instances): /namespaces/:namespace/replicas[/:name] and
+		// /replicas; 404 CAPABILITY_MISSING on clusters without the CRD
+		handlers.NewResourceHandler(s.k8sClient, k8s.InferenceReplicaResource, s.logger).Mount(v1, true)
+
+		// Kubernetes events for one object: /namespaces/:namespace/events?kind=&name=
+		objectEventsHandler := handlers.NewObjectEventsHandler(s.k8sClient, s.logger)
+		v1.GET("/namespaces/:namespace/events", objectEventsHandler.List)
+
+		// Pod logs of an InferenceService, newline-delimited JSON
+		logsHandler := handlers.NewLogsHandler(s.k8sClient, s.logger)
+		v1.GET("/namespaces/:namespace/services/:name/logs", logsHandler.Stream)
+
 		// Accelerators endpoints
 		acceleratorsHandler := handlers.NewAcceleratorsHandler(s.k8sClient, s.logger)
 		accelerators := v1.Group("/accelerators")
