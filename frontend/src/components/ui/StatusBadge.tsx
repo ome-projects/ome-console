@@ -4,6 +4,7 @@ type StatusState =
   | 'Ready'
   | 'Running'
   | 'Failed'
+  | 'NotReady'
   | 'In_Transit'
   | 'Pending'
   | 'Creating'
@@ -38,6 +39,11 @@ const statusConfig: Record<string, { bg: string; text: string; dot: string }> = 
     bg: 'bg-destructive/10 border-destructive/20',
     text: 'text-destructive',
     dot: 'bg-destructive',
+  },
+  NotReady: {
+    bg: 'bg-warning/10 border-warning/20',
+    text: 'text-warning',
+    dot: 'bg-warning',
   },
   In_Transit: {
     bg: 'bg-warning/10 border-warning/20',

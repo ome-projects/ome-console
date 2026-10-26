@@ -13,7 +13,7 @@ import { Icons, StatIcons } from '@/components/ui/Icons'
 import { BulkActionDropdown } from '@/components/ui/BulkActionDropdown'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
-import { resourceHref, resourceKey } from '@/lib/utils'
+import { readyState, resourceHref, resourceKey, type ReadyState } from '@/lib/utils'
 import {
   ResourcePageHeader,
   StatsGrid,
@@ -56,13 +56,8 @@ export default function ServicesPage() {
   if (isLoading) return <LoadingState message="Loading services..." />
   if (error) return <ErrorState error={error || new Error('Failed to load services')} />
 
-  const runningCount =
-    data?.items.filter((s) => s.status?.state === 'Ready' || s.status?.state === 'Running')
-      .length || 0
-  const pendingCount =
-    data?.items.filter((s) => s.status?.state === 'Pending' || s.status?.state === 'Creating')
-      .length || 0
-  const failedCount = data?.items.filter((s) => s.status?.state === 'Failed').length || 0
+  const countState = (state: ReadyState) =>
+    services.filter((s) => readyState(s.status?.conditions) === state).length
 
   const stats: StatItem[] = [
     {
@@ -71,9 +66,14 @@ export default function ServicesPage() {
       icon: StatIcons.services,
       variant: 'primary',
     },
-    { label: 'Running', value: runningCount, icon: StatIcons.ready, variant: 'success' },
-    { label: 'Pending', value: pendingCount, icon: StatIcons.pending, variant: 'warning' },
-    { label: 'Failed', value: failedCount, icon: StatIcons.failed, variant: 'destructive' },
+    { label: 'Ready', value: countState('Ready'), icon: StatIcons.ready, variant: 'success' },
+    {
+      label: 'Not Ready',
+      value: countState('NotReady'),
+      icon: StatIcons.failed,
+      variant: 'warning',
+    },
+    { label: 'Unknown', value: countState('Unknown'), icon: StatIcons.pending, variant: 'muted' },
   ]
 
   return (
@@ -195,7 +195,7 @@ export default function ServicesPage() {
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    <StatusBadge state={service.status?.state} size="sm" />
+                    <StatusBadge state={readyState(service.status?.conditions)} size="sm" />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
                     {service.metadata.creationTimestamp

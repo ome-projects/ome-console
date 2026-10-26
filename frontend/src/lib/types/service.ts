@@ -57,8 +57,8 @@ export interface ExplainerSpec {
   maxReplicas?: number
 }
 
+/** OME has no `status.state` on InferenceServices; read readiness with `readyState(conditions)`. */
 export interface InferenceServiceStatus {
-  state?: string
   url?: string
   address?: {
     url?: string
