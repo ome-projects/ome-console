@@ -27,10 +27,14 @@ const (
 	informerResyncPeriod = 30 * time.Second
 )
 
-// EventBroadcaster handles real-time event broadcasting
+// EventBroadcaster fans resource events out to the SSE streams subscribed to it. Close ends every
+// subscription at once, which is how shutdown gets the streams to return.
 type EventBroadcaster struct {
 	mu        sync.RWMutex
 	listeners map[chan ResourceEvent]struct{}
+	// closed is set by Close. After that, Subscribe hands out closed channels and Broadcast
+	// reaches nobody, so a stream that starts during shutdown ends immediately.
+	closed bool
 }
 
 // ResourceEvent represents a change to a Kubernetes resource
@@ -146,26 +150,52 @@ func NewEventBroadcaster() *EventBroadcaster {
 	}
 }
 
-// Subscribe adds a listener to receive events
+// Subscribe adds a listener to receive events. After Close it returns a channel that is already
+// closed, so the caller ends like every other stream.
 func (eb *EventBroadcaster) Subscribe() chan ResourceEvent {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
 	ch := make(chan ResourceEvent, 100)
+	if eb.closed {
+		close(ch)
+		return ch
+	}
 	eb.listeners[ch] = struct{}{}
 	return ch
 }
 
-// Unsubscribe removes a listener
+// Unsubscribe removes a listener and closes its channel. A channel that Close already ended is
+// left alone, so a stream's deferred Unsubscribe is safe during shutdown.
 func (eb *EventBroadcaster) Unsubscribe(ch chan ResourceEvent) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
+	if _, ok := eb.listeners[ch]; !ok {
+		return
+	}
 	delete(eb.listeners, ch)
 	close(ch)
 }
 
-// Broadcast sends an event to all listeners
+// Close ends every subscription by closing its channel and makes later Subscribe calls return
+// closed channels. Calling it again is a no-op.
+func (eb *EventBroadcaster) Close() {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+
+	if eb.closed {
+		return
+	}
+	eb.closed = true
+	for ch := range eb.listeners {
+		delete(eb.listeners, ch)
+		close(ch)
+	}
+}
+
+// Broadcast sends an event to all listeners. A channel leaves the map and is closed only under
+// the write lock, so the sends here never reach a closed channel.
 func (eb *EventBroadcaster) Broadcast(event ResourceEvent) {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
@@ -222,9 +252,12 @@ func (c *Client) StartInformers() error {
 	return nil
 }
 
-// Stop stops all informers and waits for their goroutines, event handlers included, to exit.
+// Stop stops all informers and waits for their goroutines, event handlers included, to exit,
+// then closes the broadcaster so every SSE stream returns. Call it before http.Server.Shutdown:
+// Shutdown waits for active connections, and an open stream would hold it to its deadline.
 func (c *Client) Stop() {
 	close(c.stopCh)
 	c.DynamicInformerFactory.Shutdown()
 	c.InformerFactory.Shutdown()
+	c.Broadcaster.Close()
 }

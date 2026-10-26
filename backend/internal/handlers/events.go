@@ -102,8 +102,9 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 		select {
 		case event, ok := <-eventChan:
 			if !ok {
-				// Channel closed, client disconnected
-				h.logger.Info("SSE event channel closed", zap.String("client_ip", clientIP))
+				// The broadcaster was closed: the server is shutting down. Returning ends the
+				// response, so http.Server.Shutdown sees an idle connection instead of waiting.
+				h.logger.Info("SSE stream ended for shutdown", zap.String("client_ip", clientIP))
 				return
 			}
 
