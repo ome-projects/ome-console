@@ -1,41 +1,25 @@
 'use client'
 
-import { useRuntime, useCreateRuntime } from '@/lib/hooks/useRuntimes'
+import { useRuntime } from '@/lib/hooks/useRuntimes'
 import { useRouter } from 'next/navigation'
 import { useResourceRef } from '@/lib/hooks/useResourceRef'
-import { withNamespace } from '@/lib/utils'
+import { resourceHref, withNamespace } from '@/lib/utils'
 import { RuntimeForm } from '@/components/forms/runtime'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { useMemo } from 'react'
-import type { ClusterServingRuntime } from '@/lib/types/runtime'
+import type { Runtime } from '@/lib/types/runtime'
 
 export default function CloneRuntimePage() {
   const { name: sourceName, namespace } = useResourceRef()
   const router = useRouter()
   const { data: runtime, isLoading: isLoadingRuntime } = useRuntime(sourceName, namespace)
-  const createRuntime = useCreateRuntime()
 
-  // Prepare cloned data - clear the name so user must enter a new one
-  const clonedData = useMemo((): ClusterServingRuntime | undefined => {
+  // The clone keeps the source's scope and spec; the name is cleared for the user to enter.
+  // The form drops the server-managed metadata (uid, resourceVersion...) when it creates.
+  const clonedData = useMemo((): Runtime | undefined => {
     if (!runtime) return undefined
-
-    return {
-      ...runtime,
-      metadata: {
-        ...runtime.metadata,
-        name: '', // Clear name for user to enter new one
-        // Remove system-managed fields
-        uid: undefined,
-        resourceVersion: undefined,
-        creationTimestamp: undefined,
-      },
-    }
+    return { ...runtime, metadata: { ...runtime.metadata, name: '' } }
   }, [runtime])
-
-  const handleSubmit = async (data: any) => {
-    await createRuntime.mutateAsync(data)
-    router.push('/runtimes')
-  }
 
   if (!isLoadingRuntime && !runtime) {
     return (
@@ -50,7 +34,7 @@ export default function CloneRuntimePage() {
     <RuntimeForm
       mode="create"
       initialData={clonedData}
-      onSubmit={handleSubmit}
+      onSuccess={(created) => router.push(resourceHref('/runtimes', created))}
       isLoading={isLoadingRuntime}
       backLink={withNamespace(`/runtimes/${sourceName}`, namespace)}
       backLinkText={`Back to ${sourceName}`}

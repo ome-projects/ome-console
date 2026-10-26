@@ -1,10 +1,11 @@
 'use client'
 
-import { UseFormRegister, Control } from 'react-hook-form'
+import { UseFormRegister, Control, useFormContext } from 'react-hook-form'
 import { CollapsibleSection } from '../../CollapsibleSection'
 import { ContainerForm } from '../../ContainerForm'
 import { VolumeForm } from '../../VolumeForm'
-import { ScalingConfig } from './ScalingConfig'
+import { ComponentExtensionFields } from '../../shared/ComponentExtensionFields'
+import { useRuntimeScope } from '../RuntimeFormContext'
 import { MultiNodeConfig } from './MultiNodeConfig'
 import { ContainerListSection } from './ContainerListSection'
 
@@ -34,7 +35,7 @@ interface RuntimeComponentSectionProps {
  * Eliminates duplication between EngineConfigSection and DecoderConfigSection.
  *
  * Includes:
- * - Scaling configuration
+ * - Replica bounds and the autoscaler block (shared with the InferenceService form)
  * - Multi-node toggle and configuration (Leader/Worker)
  * - Single-node Runner configuration (when multi-node disabled)
  * - Volumes
@@ -52,11 +53,23 @@ export function RuntimeComponentSection({
   leaderDescription,
   workerDescription,
 }: RuntimeComponentSectionProps) {
+  const { setValue } = useFormContext()
+  const { namespace } = useRuntimeScope()
+
+  const toggleMultiNode = (enabled: boolean) => {
+    onMultiNodeToggle(enabled)
+    if (!enabled) {
+      // The leader and worker inputs unmount; their values would otherwise be submitted unseen.
+      setValue(`${basePath}.leader`, undefined, { shouldDirty: true })
+      setValue(`${basePath}.worker`, undefined, { shouldDirty: true })
+    }
+  }
+
   return (
     <CollapsibleSection title={title} description={description}>
       <div className="space-y-8">
-        {/* Scaling Configuration */}
-        <ScalingConfig basePath={basePath} register={register} />
+        {/* Replicas and autoscaler */}
+        <ComponentExtensionFields basePath={basePath} namespace={namespace} />
 
         {/* Multi-Node Configuration - placed before Runner so toggle is visible first */}
         <MultiNodeConfig
@@ -64,7 +77,7 @@ export function RuntimeComponentSection({
           register={register}
           control={control}
           enabled={multiNodeEnabled}
-          onToggle={onMultiNodeToggle}
+          onToggle={toggleMultiNode}
           leaderDescription={leaderDescription}
           workerDescription={workerDescription}
         />

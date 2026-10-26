@@ -1,11 +1,16 @@
 'use client'
 
-import { useRuntimeFormContext } from '../RuntimeFormContext'
+import { Controller } from 'react-hook-form'
+import { useFieldError, useRuntimeFormContext, useRuntimeScope } from '../RuntimeFormContext'
 import { CollapsibleSection } from '../../CollapsibleSection'
 import { ContainerForm } from '../../ContainerForm'
 import { VolumeForm } from '../../VolumeForm'
-import { ScalingConfig, ContainerListSection } from '../components'
-import { textareaClassName, labelStyles, helpTextClassName } from '../../styles'
+import { ComponentExtensionFields } from '../../shared/ComponentExtensionFields'
+import { ContainerListSection, JsonMapField } from '../components'
+import type { JsonMapValue } from '../components/JsonMapField'
+import { helpTextClassName, errorClassName } from '../../styles'
+
+const CONFIG_PATH = 'spec.routerConfig.config'
 
 /**
  * Router configuration section for RuntimeForm.
@@ -14,6 +19,9 @@ import { textareaClassName, labelStyles, helpTextClassName } from '../../styles'
 export function RouterConfigSection() {
   const { form } = useRuntimeFormContext()
   const { register, control } = form
+  const { namespace } = useRuntimeScope()
+  const fieldError = useFieldError()
+  const configError = fieldError(CONFIG_PATH)
 
   return (
     <CollapsibleSection
@@ -21,8 +29,8 @@ export function RouterConfigSection() {
       description="Configure the router component for request routing and load balancing"
     >
       <div className="space-y-8">
-        {/* Scaling Configuration */}
-        <ScalingConfig basePath="spec.routerConfig" register={register} />
+        {/* Replicas and autoscaler */}
+        <ComponentExtensionFields basePath="spec.routerConfig" namespace={namespace} />
 
         {/* Runner (Main Container) */}
         <div>
@@ -39,14 +47,23 @@ export function RouterConfigSection() {
           <h3 className="text-base font-semibold text-foreground mb-4">
             Router Configuration Parameters
           </h3>
-          <p className={helpTextClassName}>
-            Additional configuration parameters as key-value pairs (JSON format)
-          </p>
-          <textarea
-            {...register('spec.routerConfig.config')}
-            className={`${textareaClassName} font-mono`}
-            placeholder={`{\n  "timeout": "30s",\n  "maxConnections": "1000"\n}`}
+          <label htmlFor={CONFIG_PATH} className={`${helpTextClassName} mb-2 block`}>
+            Additional configuration parameters as key-value pairs (a JSON object of strings)
+          </label>
+          <Controller
+            control={control}
+            name={CONFIG_PATH}
+            render={({ field }) => (
+              <JsonMapField
+                id={CONFIG_PATH}
+                value={field.value as JsonMapValue}
+                onChange={field.onChange}
+                error={!!configError}
+                placeholder={'{\n  "timeout": "30s",\n  "maxConnections": "1000"\n}'}
+              />
+            )}
           />
+          {configError && <p className={errorClassName}>{configError}</p>}
         </div>
 
         {/* Volumes */}
