@@ -15,7 +15,7 @@ import { SortableHeader } from '@/components/ui/SortableHeader'
 import { BulkActionDropdown } from '@/components/ui/BulkActionDropdown'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
-import { resourceHref, resourceKey } from '@/lib/utils'
+import { findCondition, resourceHref, resourceKey } from '@/lib/utils'
 import {
   ResourcePageHeader,
   StatsGrid,
@@ -23,11 +23,34 @@ import {
   EmptyTableState,
   type StatItem,
 } from '@/components/layout'
+import {
+  INHERIT_FROM_ANNOTATION,
+  InheritanceBadge,
+  inheritFrom,
+} from '@/components/runtimes/RuntimeInheritance'
 import type { ClusterServingRuntime } from '@/lib/types/runtime'
 
-type SortField = 'name' | 'accelerators' | 'protocol' | 'status' | 'created'
+type SortField = 'name' | 'accelerators' | 'protocol' | 'status' | 'inheritance' | 'created'
 
 const emptyIcon = <Icons.server size="lg" />
+
+/** The `InheritanceReady` condition and the `ome.io/inherit-from` parent of a runtime. */
+function InheritanceCell({ runtime }: { runtime: ClusterServingRuntime }) {
+  const parent = inheritFrom(runtime)
+  if (!parent && !findCondition(runtime.status?.conditions, 'InheritanceReady')) {
+    return <span className="text-xs text-muted-foreground">-</span>
+  }
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <InheritanceBadge runtime={runtime} size="sm" />
+      {parent && (
+        <span className="text-xs text-muted-foreground" title={INHERIT_FROM_ANNOTATION}>
+          from {parent}
+        </span>
+      )}
+    </div>
+  )
+}
 
 export default function RuntimesPage() {
   const [selectedNamespace, setSelectedNamespace] = useState<string>('')
@@ -46,6 +69,8 @@ export default function RuntimesPage() {
         return runtime.spec.protocolVersions?.join(',') || ''
       case 'status':
         return runtime.spec.disabled ? 'disabled' : 'active'
+      case 'inheritance':
+        return inheritFrom(runtime) || ''
       case 'created':
         return runtime.metadata.creationTimestamp || ''
       default:
@@ -171,6 +196,14 @@ export default function RuntimesPage() {
                 Status
               </SortableHeader>
               <SortableHeader
+                field="inheritance"
+                currentField={sortField}
+                direction={sortDirection}
+                onSort={handleSort}
+              >
+                Inheritance
+              </SortableHeader>
+              <SortableHeader
                 field="created"
                 currentField={sortField}
                 direction={sortDirection}
@@ -183,7 +216,7 @@ export default function RuntimesPage() {
           <tbody className="divide-y divide-border bg-card">
             {sortedRuntimes.length === 0 ? (
               <EmptyTableState
-                colSpan={6}
+                colSpan={7}
                 icon={emptyIcon}
                 message="No runtimes found"
                 action={
@@ -242,6 +275,9 @@ export default function RuntimesPage() {
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <StatusBadge state={runtime.spec.disabled ? 'Disabled' : 'Active'} size="sm" />
+                  </td>
+                  <td className="whitespace-nowrap px-6 py-4">
+                    <InheritanceCell runtime={runtime} />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
                     {runtime.metadata.creationTimestamp

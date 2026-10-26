@@ -10,11 +10,12 @@ import { ConfirmDeleteModal } from '@/components/ui/Modal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { ConditionsTable } from '@/components/ui/ConditionsTable'
 import { KeyValueList } from '@/components/ui/KeyValueList'
 import { NodeList } from '@/components/ui/NodeList'
 import { SpecCard } from '@/components/ui/SpecCard'
 import { Icons } from '@/components/ui/Icons'
-import { exportAsYaml } from '@/lib/utils'
+import { conditionReason, conditionState, exportAsYaml, findCondition } from '@/lib/utils'
 
 // Helper to format bytes
 function formatBytes(bytes: number): string {
@@ -71,6 +72,9 @@ export default function ModelDetailPage() {
       exportAsYaml(model, `${model.metadata.name}.yaml`)
     }
   }
+
+  const conditions = model?.status?.conditions
+  const metadataExtracted = findCondition(conditions, 'MetadataExtracted')
 
   if (isLoading) {
     return <LoadingState message="Loading model details..." />
@@ -133,13 +137,28 @@ export default function ModelDetailPage() {
         {/* Status */}
         <div className="mb-6 rounded-lg bg-white p-6 shadow">
           <h2 className="mb-4 text-lg font-medium text-gray-900">Status</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-sm font-medium text-gray-500">State</dt>
               <dd className="mt-1">
                 <StatusBadge state={model.status?.state} />
               </dd>
             </div>
+            {metadataExtracted && (
+              <div>
+                <dt className="text-sm font-medium text-gray-500">Metadata</dt>
+                <dd className="mt-1">
+                  <StatusBadge
+                    state={
+                      metadataExtracted.status === 'True'
+                        ? 'Extracted'
+                        : conditionState(conditions, 'MetadataExtracted')
+                    }
+                    title={conditionReason(conditions, 'MetadataExtracted')}
+                  />
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-sm font-medium text-gray-500">Created</dt>
               <dd className="mt-1 text-sm text-gray-900">
@@ -273,6 +292,16 @@ export default function ModelDetailPage() {
           )}
           {model.status?.nodesFailed && (
             <NodeList title="Failed on Nodes" nodes={model.status.nodesFailed} variant="error" />
+          )}
+
+          {/* Conditions: SourceReachable and Ready for pvc:// models, MetadataExtracted */}
+          {conditions && conditions.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h3 className="text-sm font-medium text-gray-900 mb-3">
+                Conditions ({conditions.length})
+              </h3>
+              <ConditionsTable conditions={conditions} />
+            </div>
           )}
 
           {/* Labels & Annotations */}

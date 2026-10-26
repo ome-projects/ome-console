@@ -1,7 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useModels } from '@/lib/hooks/useModels'
+import { useNamespaces } from '@/lib/hooks/useNamespaces'
 import { useRuntimes } from '@/lib/hooks/useRuntimes'
 import { useServices } from '@/lib/hooks/useServices'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -9,11 +11,20 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { DataTable, TableLink, TableText } from '@/components/ui/DataTable'
 import { Button, ButtonIcons } from '@/components/ui/Button'
 import { StatIcons } from '@/components/ui/Icons'
-import { ResourcePageHeader, StatsGrid, type StatItem } from '@/components/layout'
+import { readyState, resourceHref, resourceKey } from '@/lib/utils'
+import { ResourceFilters, ResourcePageHeader, StatsGrid, type StatItem } from '@/components/layout'
 import type { ClusterBaseModel } from '@/lib/types/model'
 
 export default function DashboardPage() {
-  const { data: modelsData, isLoading: modelsLoading } = useModels()
+  // The backend lists BaseModels per namespace only, so the dashboard counts every
+  // ClusterBaseModel plus the BaseModels of one namespace chosen here.
+  const [selectedNamespace, setSelectedNamespace] = useState<string>('')
+
+  const { data: clusterModels, isLoading: modelsLoading } = useModels()
+  const { data: namespaceModels, isLoading: namespaceModelsLoading } = useModels(
+    selectedNamespace || undefined
+  )
+  const { data: namespacesData } = useNamespaces()
   const { data: runtimesData, isLoading: runtimesLoading } = useRuntimes()
   const { data: servicesData, isLoading: servicesLoading } = useServices()
 
@@ -21,14 +32,32 @@ export default function DashboardPage() {
     return <LoadingState message="Loading dashboard..." />
   }
 
-  const recentModels = modelsData?.items.slice(0, 5) || []
+  const models: ClusterBaseModel[] = [
+    ...(clusterModels?.items ?? []),
+    ...(selectedNamespace && !namespaceModelsLoading ? (namespaceModels?.items ?? []) : []),
+  ]
+  const services = servicesData?.items ?? []
+  const readyServices = services.filter((s) => readyState(s.status?.conditions) === 'Ready')
+
+  const recentModels = [...models]
+    .sort((a, b) =>
+      (b.metadata.creationTimestamp ?? '').localeCompare(a.metadata.creationTimestamp ?? '')
+    )
+    .slice(0, 5)
 
   const columns = [
     {
       key: 'name',
       header: 'Name',
       cell: (model: ClusterBaseModel) => (
-        <TableLink href={`/models/${model.metadata.name}`}>{model.metadata.name}</TableLink>
+        <TableLink href={resourceHref('/models', model)}>{model.metadata.name}</TableLink>
+      ),
+    },
+    {
+      key: 'scope',
+      header: 'Scope',
+      cell: (model: ClusterBaseModel) => (
+        <TableText muted>{model.metadata.namespace || 'Cluster'}</TableText>
       ),
     },
     {
@@ -53,14 +82,14 @@ export default function DashboardPage() {
   const stats: StatItem[] = [
     {
       label: 'Total Models',
-      value: modelsData?.total || 0,
+      value: models.length,
       icon: StatIcons.models,
       href: '/models',
       variant: 'primary',
     },
     {
       label: 'Ready Models',
-      value: modelsData?.items.filter((m) => m.status?.state === 'Ready').length || 0,
+      value: models.filter((m) => m.status?.state === 'Ready').length,
       icon: StatIcons.ready,
       href: '/models',
       variant: 'success',
@@ -73,11 +102,25 @@ export default function DashboardPage() {
       variant: 'accent',
     },
     {
-      label: 'Services',
+      label: 'Total Services',
       value: servicesData?.total || 0,
       icon: StatIcons.services,
       href: '/services',
       variant: 'warning',
+    },
+    {
+      label: 'Ready Services',
+      value: readyServices.length,
+      icon: StatIcons.ready,
+      href: '/services',
+      variant: 'success',
+    },
+    {
+      label: 'Not Ready Services',
+      value: services.length - readyServices.length,
+      icon: StatIcons.failed,
+      href: '/services',
+      variant: 'muted',
     },
   ]
 
@@ -87,20 +130,30 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Overview of your OME resources"
         actions={
-          <Button href="/models/import" icon={ButtonIcons.import}>
-            Quick Import
-          </Button>
+          <>
+            <ResourceFilters
+              namespaces={namespacesData?.items}
+              selectedNamespace={selectedNamespace}
+              onNamespaceChange={setSelectedNamespace}
+              scopeLabel="Models:"
+              defaultOptionText="Cluster-scoped only"
+              namespaceFormat={(ns) => `Cluster + ${ns}`}
+            />
+            <Button href="/models/import" icon={ButtonIcons.import}>
+              Quick Import
+            </Button>
+          </>
         }
       />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <StatsGrid stats={stats} />
+        <StatsGrid stats={stats} columns={3} />
 
         <DataTable
           title="Recent Models"
           columns={columns}
           data={recentModels}
-          keyExtractor={(model) => model.metadata.name}
+          keyExtractor={resourceKey}
           headerActions={
             <Link
               href="/models"

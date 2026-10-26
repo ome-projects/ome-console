@@ -13,7 +13,14 @@ import { Icons, StatIcons } from '@/components/ui/Icons'
 import { BulkActionDropdown } from '@/components/ui/BulkActionDropdown'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { ConfirmDeleteModal } from '@/components/ui/Modal'
-import { readyState, resourceHref, resourceKey, type ReadyState } from '@/lib/utils'
+import {
+  conditionReason,
+  findCondition,
+  readyState,
+  resourceHref,
+  resourceKey,
+  type ReadyState,
+} from '@/lib/utils'
 import {
   ResourcePageHeader,
   StatsGrid,
@@ -25,8 +32,41 @@ import type { InferenceService } from '@/lib/types/service'
 
 const emptyIcon = <Icons.server size="lg" />
 
+const headerClass =
+  'px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground'
+const cellClass = 'whitespace-nowrap px-6 py-4 text-sm text-muted-foreground'
+const chipClass = 'inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium'
+
+/** A service is rolling while any component's canary step machine is away from Stable. */
+function isRolling(service: InferenceService): boolean {
+  return Object.values(service.status?.components ?? {}).some(
+    (component) => component.rolloutPhase && component.rolloutPhase !== 'Stable'
+  )
+}
+
+/** `kubectl get isvc -o wide` Plan-Source: where the active run's first group was pinned from. */
+function planSource(service: InferenceService): string | undefined {
+  const group = service.status?.rollout?.activeRun?.plan.groups?.[0]
+  if (!group) return undefined
+  return group.source === 'Policy' && group.policyRef?.name
+    ? `Policy (${group.policyRef.name})`
+    : group.source
+}
+
+function PlanDriftCell({ service }: { service: InferenceService }) {
+  const conditions = service.status?.conditions
+  const drift = findCondition(conditions, 'RolloutPlanDrift')
+  if (!drift) return <>-</>
+  const state =
+    drift.status === 'True' ? 'Drifted' : drift.status === 'False' ? 'InSync' : 'Unknown'
+  return (
+    <StatusBadge state={state} size="sm" title={conditionReason(conditions, 'RolloutPlanDrift')} />
+  )
+}
+
 export default function ServicesPage() {
   const [selectedNamespace, setSelectedNamespace] = useState<string>('')
+  const [wide, setWide] = useState(false)
 
   const { data, isLoading, error } = useServices(selectedNamespace || undefined)
   const { data: namespacesData } = useNamespaces()
@@ -68,13 +108,20 @@ export default function ServicesPage() {
     },
     { label: 'Ready', value: countState('Ready'), icon: StatIcons.ready, variant: 'success' },
     {
-      label: 'Not Ready',
+      label: 'Not ready',
       value: countState('NotReady'),
       icon: StatIcons.failed,
       variant: 'warning',
     },
-    { label: 'Unknown', value: countState('Unknown'), icon: StatIcons.pending, variant: 'muted' },
+    {
+      label: 'Rolling',
+      value: services.filter(isRolling).length,
+      icon: StatIcons.autoSelect,
+      variant: 'accent',
+    },
   ]
+
+  const columnCount = 9 + (wide ? 3 : 0)
 
   return (
     <div className="min-h-screen pb-12">
@@ -94,7 +141,18 @@ export default function ServicesPage() {
         <ResourceTable
           title="All Services"
           headerActions={
-            <BulkActionDropdown actions={bulkActions} selectedCount={selectedItems.size} />
+            <>
+              <BulkActionDropdown actions={bulkActions} selectedCount={selectedItems.size} />
+              <Button
+                variant={wide ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setWide(!wide)}
+                aria-pressed={wide}
+                title="Also show placement, plan source and plan drift"
+              >
+                Wide
+              </Button>
+            </>
           }
           filterProps={{
             namespaces: namespacesData?.items,
@@ -115,33 +173,27 @@ export default function ServicesPage() {
                   aria-label="Select all services"
                 />
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Name
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Namespace
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Model
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Runtime
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Replicas
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Created
-              </th>
+              <th className={headerClass}>Name</th>
+              <th className={headerClass}>Namespace</th>
+              <th className={headerClass}>URL</th>
+              <th className={headerClass}>Ready</th>
+              <th className={headerClass}>BaseModel</th>
+              <th className={headerClass}>Runtime</th>
+              <th className={headerClass}>Mode</th>
+              {wide && (
+                <>
+                  <th className={headerClass}>Placement</th>
+                  <th className={headerClass}>Plan source</th>
+                  <th className={headerClass}>Plan drift</th>
+                </>
+              )}
+              <th className={headerClass}>Created</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-card">
             {services.length === 0 ? (
               <EmptyTableState
-                colSpan={8}
+                colSpan={columnCount}
                 icon={emptyIcon}
                 message="No inference services found"
                 action={
@@ -156,54 +208,113 @@ export default function ServicesPage() {
                 }
               />
             ) : (
-              services.map((service: InferenceService) => (
-                <tr
-                  key={resourceKey(service)}
-                  className={`transition-colors hover:bg-muted/30 ${
-                    selectedItems.has(resourceKey(service)) ? 'bg-primary/5' : ''
-                  }`}
-                >
-                  <td className="w-12 px-4 py-4">
-                    <Checkbox
-                      checked={selectedItems.has(resourceKey(service))}
-                      onChange={(checked) => handleSelectItem(resourceKey(service), checked)}
-                      aria-label={`Select ${service.metadata.name}`}
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
-                    <Link
-                      href={resourceHref('/services', service)}
-                      className="text-primary hover:text-primary/80 transition-colors"
-                    >
-                      {service.metadata.name}
-                    </Link>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
-                      {service.metadata.namespace || 'default'}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                    {service.spec.model?.name || '-'}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                    {service.spec.runtime?.name || '-'}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center rounded-md bg-accent/10 text-accent px-2 py-0.5 text-xs font-medium">
-                      {service.spec.engine?.minReplicas || 1}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4">
-                    <StatusBadge state={readyState(service.status?.conditions)} size="sm" />
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
-                    {service.metadata.creationTimestamp
-                      ? new Date(service.metadata.creationTimestamp).toLocaleDateString()
-                      : '-'}
-                  </td>
-                </tr>
-              ))
+              services.map((service: InferenceService) => {
+                const conditions = service.status?.conditions
+                const model = service.spec.model
+                const runtime = service.spec.runtime
+                const url = service.status?.url
+                return (
+                  <tr
+                    key={resourceKey(service)}
+                    className={`transition-colors hover:bg-muted/30 ${
+                      selectedItems.has(resourceKey(service)) ? 'bg-primary/5' : ''
+                    }`}
+                  >
+                    <td className="w-12 px-4 py-4">
+                      <Checkbox
+                        checked={selectedItems.has(resourceKey(service))}
+                        onChange={(checked) => handleSelectItem(resourceKey(service), checked)}
+                        aria-label={`Select ${service.metadata.name}`}
+                      />
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
+                      <Link
+                        href={resourceHref('/services', service)}
+                        className="text-primary hover:text-primary/80 transition-colors"
+                      >
+                        {service.metadata.name}
+                      </Link>
+                    </td>
+                    <td className={cellClass}>
+                      <span className={chipClass}>{service.metadata.namespace || 'default'}</span>
+                    </td>
+                    <td className={cellClass}>
+                      {url ? (
+                        <span
+                          className="inline-block max-w-[16rem] truncate align-bottom font-mono text-xs"
+                          title={url}
+                        >
+                          {url}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <StatusBadge
+                        state={readyState(conditions)}
+                        size="sm"
+                        title={conditionReason(conditions, 'Ready')}
+                      />
+                    </td>
+                    <td className={cellClass}>
+                      {model?.name ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {model.name}
+                          {model.kind === 'BaseModel' && (
+                            <span className={chipClass} title="Namespaced BaseModel">
+                              BaseModel
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className={cellClass}>
+                      {runtime?.name ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {runtime.name}
+                          {runtime.kind === 'ServingRuntime' && (
+                            <span className={chipClass} title="Namespaced ServingRuntime">
+                              ServingRuntime
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="italic" title="OME selects the runtime from the model">
+                          auto
+                        </span>
+                      )}
+                    </td>
+                    <td className={cellClass}>
+                      <span className={chipClass}>
+                        {service.spec.deploymentMode || 'RawDeployment'}
+                      </span>
+                    </td>
+                    {wide && (
+                      <>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          {service.status?.placement?.phase ? (
+                            <StatusBadge state={service.status.placement.phase} size="sm" />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className={cellClass}>{planSource(service) || '-'}</td>
+                        <td className={cellClass}>
+                          <PlanDriftCell service={service} />
+                        </td>
+                      </>
+                    )}
+                    <td className={cellClass}>
+                      {service.metadata.creationTimestamp
+                        ? new Date(service.metadata.creationTimestamp).toLocaleDateString()
+                        : '-'}
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </ResourceTable>
