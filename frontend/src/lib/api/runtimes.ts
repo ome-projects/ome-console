@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import type { WriteOptions } from './createResourceApi'
 import {
   ClusterServingRuntime,
   RuntimeMatch,
@@ -20,6 +21,8 @@ const runtimePath = (name: string, namespace?: string) =>
     ? `/namespaces/${encodeURIComponent(namespace)}/runtimes/${encodeURIComponent(name)}`
     : `/runtimes/${encodeURIComponent(name)}`
 
+const writeParams = (options?: WriteOptions) => (options?.dryRun ? { dryRun: 'true' } : undefined)
+
 export const runtimesApi = {
   /** Lists ClusterServingRuntimes, or the ServingRuntimes of `namespace` when one is given. */
   list: async (namespace?: string): Promise<ListResponse<ClusterServingRuntime>> => {
@@ -36,19 +39,27 @@ export const runtimesApi = {
   },
 
   /**
-   * Creates a ServingRuntime in its `metadata.namespace` when `kind` is ServingRuntime, else a
-   * ClusterServingRuntime. The kind decides the scope, so an imported YAML is created as written.
+   * Creates a ServingRuntime in `namespace`, else in its `metadata.namespace`, when `kind` is
+   * ServingRuntime, else a ClusterServingRuntime. The kind decides the scope, so an imported
+   * YAML is created as written. `{ dryRun: true }` asks the API server to validate without
+   * persisting.
    */
-  create: async (runtime: Partial<ClusterServingRuntime>): Promise<ClusterServingRuntime> => {
+  create: async (
+    runtime: Partial<ClusterServingRuntime>,
+    namespace?: string,
+    options?: WriteOptions
+  ): Promise<ClusterServingRuntime> => {
     let path = '/runtimes'
     if (runtime.kind === 'ServingRuntime') {
-      const namespace = runtime.metadata?.namespace
-      if (!namespace) {
+      const ns = namespace ?? runtime.metadata?.namespace
+      if (!ns) {
         throw new Error(`ServingRuntime ${runtime.metadata?.name ?? ''} needs metadata.namespace`)
       }
-      path = `/namespaces/${encodeURIComponent(namespace)}/runtimes`
+      path = `/namespaces/${encodeURIComponent(ns)}/runtimes`
     }
-    const response = await apiClient.post<ClusterServingRuntime>(path, runtime)
+    const response = await apiClient.post<ClusterServingRuntime>(path, runtime, {
+      params: writeParams(options),
+    })
     return response.data
   },
 
@@ -59,14 +70,16 @@ export const runtimesApi = {
   update: async (
     name: string,
     runtime: Partial<ClusterServingRuntime>,
-    namespace?: string
+    namespace?: string,
+    options?: WriteOptions
   ): Promise<ClusterServingRuntime> => {
     const response = await apiClient.put<ClusterServingRuntime>(
       runtimePath(
         name,
         namespace ?? (runtime.kind === 'ServingRuntime' ? runtime.metadata?.namespace : undefined)
       ),
-      runtime
+      runtime,
+      { params: writeParams(options) }
     )
     return response.data
   },

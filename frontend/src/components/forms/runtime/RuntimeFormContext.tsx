@@ -1,13 +1,14 @@
 'use client'
 
 import { createContext, useContext, ReactNode, useState } from 'react'
-import { UseFormReturn, FieldValues } from 'react-hook-form'
+import { useWatch, type Path, type UseFormReturn } from 'react-hook-form'
+import type { RuntimeFormValues, RuntimeKind } from '@/lib/validation/runtime-schema'
 
 interface RuntimeFormContextValue {
   /** Whether the form is in edit mode (vs create mode) */
   isEditMode: boolean
   /** Form methods from react-hook-form */
-  form: UseFormReturn<FieldValues>
+  form: UseFormReturn<RuntimeFormValues>
   /** Whether engine multi-node is enabled */
   engineMultiNode: boolean
   /** Toggle engine multi-node */
@@ -22,7 +23,7 @@ const RuntimeFormContext = createContext<RuntimeFormContextValue | null>(null)
 
 interface RuntimeFormProviderProps {
   children: ReactNode
-  form: UseFormReturn<FieldValues>
+  form: UseFormReturn<RuntimeFormValues>
   isEditMode: boolean
   initialEngineMultiNode?: boolean
   initialDecoderMultiNode?: boolean
@@ -68,4 +69,19 @@ export function useRuntimeFormContext() {
     throw new Error('useRuntimeFormContext must be used within a RuntimeFormProvider')
   }
   return context
+}
+
+/** The scope the form is writing: the kind, and the namespace only for a ServingRuntime. */
+export function useRuntimeScope(): { kind: RuntimeKind; namespace?: string } {
+  const { form } = useRuntimeFormContext()
+  const kind = useWatch({ control: form.control, name: 'kind' })
+  const namespace = useWatch({ control: form.control, name: 'metadata.namespace' })
+  return { kind, namespace: kind === 'ServingRuntime' && namespace ? namespace : undefined }
+}
+
+/** The error message of a field addressed by a runtime path, e.g. `spec.modelSizeRange.min`. */
+export function useFieldError(): (path: string) => string | undefined {
+  const { form } = useRuntimeFormContext()
+  return (path) =>
+    form.getFieldState(path as Path<RuntimeFormValues>, form.formState).error?.message
 }

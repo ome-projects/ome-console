@@ -26,10 +26,12 @@ describe('runtimesApi.create', () => {
       metadata: { name: 'vllm', namespace: 'team-a' },
     })
     await runtimesApi.create({ metadata: { name: 'vllm' } })
+    await runtimesApi.create({ kind: 'ServingRuntime', metadata: { name: 'vllm' } }, 'team-b')
     expect(post.mock.calls.map((c) => c[0])).toEqual([
       '/namespaces/team%20a/runtimes',
       '/runtimes',
       '/runtimes',
+      '/namespaces/team-b/runtimes',
     ])
   })
 
@@ -64,6 +66,28 @@ describe('runtimesApi.update', () => {
       '/namespaces/team-a/runtimes/vllm',
       '/runtimes/vllm',
       '/runtimes/vllm',
+    ])
+  })
+})
+
+describe('runtimesApi dry runs', () => {
+  beforeEach(() => {
+    post.mockClear()
+    put.mockClear()
+  })
+
+  it('sends dryRun=true as a query parameter and nothing otherwise', async () => {
+    await runtimesApi.create({ metadata: { name: 'vllm' } }, undefined, { dryRun: true })
+    await runtimesApi.create({ metadata: { name: 'vllm' } })
+    await runtimesApi.update('vllm', { metadata: { name: 'vllm' } }, undefined, { dryRun: true })
+    await runtimesApi.update('vllm', { metadata: { name: 'vllm' } })
+    expect(post.mock.calls.map((c) => c[2])).toEqual([
+      { params: { dryRun: 'true' } },
+      { params: undefined },
+    ])
+    expect(put.mock.calls.map((c) => c[2])).toEqual([
+      { params: { dryRun: 'true' } },
+      { params: undefined },
     ])
   })
 })

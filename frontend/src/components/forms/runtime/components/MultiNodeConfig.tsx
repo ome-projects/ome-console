@@ -2,6 +2,7 @@
 
 import { UseFormRegister, Control } from 'react-hook-form'
 import { ContainerForm } from '../../ContainerForm'
+import { optionalNumber } from '../../shared/fields'
 import { inputMonoClassName, labelStyles } from '../../styles'
 
 interface MultiNodeConfigProps {
@@ -71,10 +72,15 @@ export function MultiNodeConfig({
             </h3>
             <p className="text-xs text-muted-foreground mb-4">{workerDescription}</p>
             <div className="mb-4">
-              <label className={labelStyles.base}>Worker Size (Number of Pods)</label>
+              <label htmlFor={`${basePath}.worker.size`} className={labelStyles.base}>
+                Worker Size (Number of Pods)
+              </label>
               <input
+                id={`${basePath}.worker.size`}
                 type="number"
-                {...register(`${basePath}.worker.size`, { valueAsNumber: true })}
+                min={1}
+                step={1}
+                {...register(`${basePath}.worker.size`, optionalNumber)}
                 className={`${inputMonoClassName} max-w-xs`}
                 placeholder="1"
               />

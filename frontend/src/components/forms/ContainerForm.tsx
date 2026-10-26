@@ -1,6 +1,7 @@
 'use client'
 
 import { UseFormRegister, useFieldArray, Control } from 'react-hook-form'
+import { optionalNumber } from './shared/fields'
 import {
   inputMonoClassName,
   inputClassName,
@@ -335,7 +336,7 @@ export function ContainerForm({
           <h5 className={sectionStyles.headerSmall}>Ports</h5>
           <button
             type="button"
-            onClick={() => appendPort({ containerPort: '', protocol: 'TCP' })}
+            onClick={() => appendPort({ protocol: 'TCP' })}
             className="rounded-lg bg-gradient-to-br from-purple-600 to-purple-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:shadow-md transition-all"
           >
             + Add
@@ -346,7 +347,7 @@ export function ContainerForm({
             <div key={field.id} className="flex items-center gap-2">
               <input
                 type="number"
-                {...register(`${basePath}.ports.${index}.containerPort`, { valueAsNumber: true })}
+                {...register(`${basePath}.ports.${index}.containerPort`, optionalNumber)}
                 className="input-focus w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                 placeholder="8080"
               />

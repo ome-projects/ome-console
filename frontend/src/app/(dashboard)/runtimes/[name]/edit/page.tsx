@@ -1,6 +1,6 @@
 'use client'
 
-import { useRuntime, useUpdateRuntime } from '@/lib/hooks/useRuntimes'
+import { useRuntime } from '@/lib/hooks/useRuntimes'
 import { useRouter } from 'next/navigation'
 import { useResourceRef } from '@/lib/hooks/useResourceRef'
 import { withNamespace } from '@/lib/utils'
@@ -11,12 +11,7 @@ export default function EditRuntimePage() {
   const { name, namespace } = useResourceRef()
   const router = useRouter()
   const { data: runtime, isLoading: isLoadingRuntime } = useRuntime(name, namespace)
-  const updateRuntime = useUpdateRuntime()
-
-  const handleSubmit = async (data: any) => {
-    await updateRuntime.mutateAsync({ name, namespace, runtime: data })
-    router.push(withNamespace(`/runtimes/${name}`, namespace))
-  }
+  const detailLink = withNamespace(`/runtimes/${name}`, namespace)
 
   if (!isLoadingRuntime && !runtime) {
     return (
@@ -31,9 +26,9 @@ export default function EditRuntimePage() {
     <RuntimeForm
       mode="edit"
       initialData={runtime}
-      onSubmit={handleSubmit}
+      onSuccess={() => router.push(detailLink)}
       isLoading={isLoadingRuntime}
-      backLink={withNamespace(`/runtimes/${name}`, namespace)}
+      backLink={detailLink}
       backLinkText="Back to Runtime Details"
     />
   )
