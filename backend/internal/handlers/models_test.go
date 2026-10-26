@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,17 +71,21 @@ func TestModelsHandler_CreateRemovesItsTokenSecretWhenTheModelIsRejected(t *test
 	ctx := context.Background()
 	secrets := client.Clientset.CoreV1().Secrets("team-a")
 
-	rejectNext := true
+	// The next model create fails with reject, as the API server would answer it.
+	var reject error
 	dynamicClient.PrependReactor("create", "basemodels", func(k8stesting.Action) (bool, runtime.Object, error) {
-		if !rejectNext {
+		if reject == nil {
 			return false, nil, nil
 		}
-		rejectNext = false
-		return true, nil, apierrors.NewInvalid(schema.GroupKind{Group: "ome.io", Kind: "BaseModel"}, "llama",
-			field.ErrorList{field.Required(field.NewPath("spec", "storage", "storageUri"), "")})
+		err := reject
+		reject = nil
+		return true, nil, err
 	})
+	invalid := apierrors.NewInvalid(schema.GroupKind{Group: "ome.io", Kind: "BaseModel"}, "llama",
+		field.ErrorList{field.Required(field.NewPath("spec", "storage", "storageUri"), "")})
 
 	body := []byte(`{"model": {"metadata": {"name": "llama"}}, "huggingfaceToken": "hf_secret"}`)
+	reject = invalid
 	expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models", body, "application/json"),
 		http.StatusUnprocessableEntity, "INVALID")
 	if _, err := secrets.Get(ctx, "llama-hf-token", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
@@ -100,12 +105,22 @@ func TestModelsHandler_CreateRemovesItsTokenSecretWhenTheModelIsRejected(t *test
 	if _, err := secrets.Create(ctx, kept, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	rejectNext = true
+	reject = invalid
 	expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models",
 		[]byte(`{"model": {"metadata": {"name": "kept"}}, "huggingfaceToken": "hf_secret"}`), "application/json"),
 		http.StatusUnprocessableEntity, "INVALID")
 	if _, err := secrets.Get(ctx, "kept-hf-token", metav1.GetOptions{}); err != nil {
 		t.Fatalf("a secret that existed before the request was removed: %v", err)
+	}
+
+	// When another create of the same name stored its model first, the Secret stays: that model
+	// points at it.
+	reject = apierrors.NewAlreadyExists(schema.GroupResource{Group: "ome.io", Resource: "basemodels"}, "raced")
+	expectError(t, do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models",
+		[]byte(`{"model": {"metadata": {"name": "raced"}}, "huggingfaceToken": "hf_secret"}`), "application/json"),
+		http.StatusConflict, "ALREADY_EXISTS")
+	if _, err := secrets.Get(ctx, "raced-hf-token", metav1.GetOptions{}); err != nil {
+		t.Fatalf("the secret the other request's model uses was removed: %v", err)
 	}
 }
 
@@ -177,5 +192,55 @@ func TestModelsHandler_CreateWithAnExistingTokenSecret(t *testing.T) {
 	expectError(t, create("existing"), http.StatusConflict, "ALREADY_EXISTS")
 	if got := get("existing-hf-token").StringData["token"]; got != "old" {
 		t.Fatalf("existing: token = %q, want it unchanged", got)
+	}
+}
+
+func TestModelsHandler_CreateChecksTheAPIServerForAnExistingModel(t *testing.T) {
+	client, dynamicClient := newStartedClient(t, served)
+	router, v1 := newRouter()
+	v1.POST("/namespaces/:namespace/models", NewModelsHandler(client, zaptest.NewLogger(t)).CreateBaseModel)
+	ctx := context.Background()
+
+	// "fresh" exists on the API server but has not reached the cache yet; while lookupErr is set,
+	// every lookup fails.
+	var lookupErr error
+	dynamicClient.PrependReactor("get", "basemodels", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if lookupErr != nil {
+			return true, nil, lookupErr
+		}
+		if action.(k8stesting.GetAction).GetName() == "fresh" {
+			return true, newObject("BaseModel", "team-a", "fresh", nil), nil
+		}
+		return false, nil, nil
+	})
+	create := func(name string) *httptest.ResponseRecorder {
+		return do(t, router, http.MethodPost, "/api/v1/namespaces/team-a/models",
+			[]byte(`{"model": {"metadata": {"name": "`+name+`"}}, "huggingfaceToken": "new"}`), "application/json")
+	}
+	token := func(name string) string {
+		t.Helper()
+		secret, err := client.Clientset.CoreV1().Secrets("team-a").Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("secret %s: %v", name, err)
+		}
+		return secret.StringData["token"]
+	}
+
+	if _, err := client.EnsureHuggingFaceTokenSecret(ctx, "fresh-hf-token", "team-a", "old"); err != nil {
+		t.Fatal(err)
+	}
+	expectError(t, create("fresh"), http.StatusConflict, "ALREADY_EXISTS")
+	if got := token("fresh-hf-token"); got != "old" {
+		t.Fatalf("fresh: token = %q, want it unchanged", got)
+	}
+
+	// A failed lookup stops the request instead of reading as "no such model".
+	if _, err := client.EnsureHuggingFaceTokenSecret(ctx, "llama-hf-token", "team-a", "old"); err != nil {
+		t.Fatal(err)
+	}
+	lookupErr = apierrors.NewInternalError(errors.New("etcd unavailable"))
+	expectError(t, create("llama"), http.StatusInternalServerError, "INTERNAL")
+	if got := token("llama-hf-token"); got != "old" {
+		t.Fatalf("llama: token = %q, want it unchanged", got)
 	}
 }

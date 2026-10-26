@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -124,7 +123,12 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 	var secretCreated bool
 	if requestBody.HuggingfaceToken != "" {
 		// An existing model keeps its token: refuse before its Secret is touched.
-		if h.modelExists(ctx, namespace, model.GetName()) {
+		exists, err := h.k8sClient.ModelExists(ctx, namespace, model.GetName())
+		if err != nil {
+			writeError(c, h.logger, "Failed to check for an existing model", err)
+			return
+		}
+		if exists {
 			writeError(c, h.logger, "Failed to create model",
 				apierrors.NewAlreadyExists(res.GVR().GroupResource(), model.GetName()))
 			return
@@ -136,7 +140,6 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 			return
 		}
 
-		var err error
 		secretCreated, err = h.k8sClient.EnsureHuggingFaceTokenSecret(ctx, secretName, secretNamespace, requestBody.HuggingfaceToken)
 		if err != nil {
 			writeError(c, h.logger, "Failed to create HuggingFace token secret", err)
@@ -158,9 +161,10 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 	}
 	if err != nil {
 		// A rejected model was not stored, so the Secret made for it goes too and a corrected
-		// retry starts clean. After any other error the model may exist: the Secret stays, and a
-		// retry reuses it.
-		if secretCreated && rejected(err) {
+		// retry starts clean. AlreadyExists is the exception: another create of the same name got
+		// there first, and its model points at this Secret. After any other error the model may
+		// exist: the Secret stays, and a retry reuses it.
+		if secretCreated && rejected(err) && !apierrors.IsAlreadyExists(err) {
 			if delErr := h.k8sClient.DeleteSecret(ctx, secretName, secretNamespace); delErr != nil {
 				h.logger.Warn("Failed to remove HuggingFace token secret",
 					zap.String("secretName", secretName),
@@ -177,17 +181,6 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 		zap.String("namespace", namespace),
 		zap.String("name", created.GetName()))
 	c.JSON(http.StatusCreated, created.Object)
-}
-
-// modelExists reports whether the cache already holds the model that create would make.
-func (h *ModelsHandler) modelExists(ctx context.Context, namespace, name string) bool {
-	var err error
-	if namespace == "" {
-		_, err = h.k8sClient.GetClusterBaseModel(ctx, name)
-	} else {
-		_, err = h.k8sClient.GetBaseModel(ctx, namespace, name)
-	}
-	return err == nil
 }
 
 // Update handles PUT /api/v1/models/:name
