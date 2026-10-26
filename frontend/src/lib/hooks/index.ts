@@ -9,6 +9,7 @@ export * from './useCapabilities'
 export * from './useReplicas'
 export * from './useObjectEvents'
 export * from './useServiceLogs'
+export * from './useServiceInstances'
 
 // Utility hooks
 export * from './useServerEvents'

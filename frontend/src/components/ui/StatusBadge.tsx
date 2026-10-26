@@ -2,8 +2,10 @@ import { clsx } from 'clsx'
 
 /**
  * Values the badge knows: model `status.state`, the `Ready` condition read as `readyState`,
- * component `rolloutPhase`, `status.placement.phase`, console-side labels for conditions and
- * runtimes. Anything else renders with the neutral fallback and its raw label.
+ * component `rolloutPhase`, `status.placement.phase`, OMENative instance phases, retry block
+ * states, migration phases, rollout coordination phases, model transition statuses, rollout run
+ * outcomes, console-side labels for conditions and runtimes. Anything else renders with the
+ * neutral fallback and its raw label.
  */
 type StatusState =
   // Model states (ModelStatusSpecStateValues)
@@ -28,6 +30,37 @@ type StatusState =
   | 'Admitting'
   | 'Racing'
   | 'Placed'
+  // OMENative instance phase (OMENativeInstanceStatusPhaseValues); Creating, Ready, Pending and
+  // Failed are shared with the states above
+  | 'Updating'
+  | 'Restarting'
+  | 'Migrating'
+  | 'Deleting'
+  // Retry block state (RetryBlockStateValues)
+  | 'Backoff'
+  | 'Held'
+  | 'RetryInProgress'
+  // Migration phase (MigrationStatusPhaseValues)
+  | 'Accepted'
+  | 'SurgePending'
+  | 'SurgeReady'
+  | 'Draining'
+  | 'Completed'
+  | 'Relocated'
+  | 'InProgress'
+  // Rollout coordination group phase (RolloutCoordinationGroupStatusPhaseValues)
+  | 'Idle'
+  | 'Surging'
+  | 'Waiting'
+  | 'Shifting'
+  | 'ScalingDown'
+  | 'Staged'
+  // Model transition status (ModelStatusTransitionStatusValues)
+  | 'UpToDate'
+  | 'BlockedByFailedLoad'
+  | 'InvalidSpec'
+  // Rollout run outcome (RolloutRunRecordOutcomeValues)
+  | 'Superseded'
   // Console labels
   | 'Running'
   | 'Active'
@@ -94,6 +127,36 @@ const statusStyles: Record<string, StatusStyle> = {
   Admitting: { tone: 'accent', busy: true },
   Racing: { tone: 'accent', busy: true },
   Placed: { tone: 'success' },
+  // OMENative instance phases
+  Updating: { tone: 'accent', busy: true },
+  Restarting: { tone: 'warning', busy: true },
+  Migrating: { tone: 'accent', busy: true },
+  Deleting: { tone: 'muted', busy: true },
+  // Retry block states
+  Backoff: { tone: 'warning', busy: true },
+  Held: { tone: 'warning' },
+  RetryInProgress: { tone: 'accent', busy: true, label: 'Retry in progress' },
+  // Migration phases
+  Accepted: { tone: 'accent' },
+  SurgePending: { tone: 'accent', busy: true, label: 'Surge pending' },
+  SurgeReady: { tone: 'accent', label: 'Surge ready' },
+  Draining: { tone: 'warning', busy: true },
+  Completed: { tone: 'success' },
+  Relocated: { tone: 'success' },
+  InProgress: { tone: 'accent', busy: true, label: 'In progress' },
+  // Rollout coordination group phases
+  Idle: { tone: 'muted' },
+  Surging: { tone: 'accent', busy: true },
+  Waiting: { tone: 'warning', busy: true },
+  Shifting: { tone: 'accent', busy: true },
+  ScalingDown: { tone: 'accent', busy: true, label: 'Scaling down' },
+  Staged: { tone: 'accent' },
+  // Model transition statuses
+  UpToDate: { tone: 'success', label: 'Up to date' },
+  BlockedByFailedLoad: { tone: 'destructive', label: 'Blocked by failed load' },
+  InvalidSpec: { tone: 'destructive', label: 'Invalid spec' },
+  // Rollout run outcomes
+  Superseded: { tone: 'muted' },
   // Console labels
   Running: { tone: 'success' },
   Active: { tone: 'success' },
