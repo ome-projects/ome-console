@@ -4,6 +4,8 @@ import {
   RuntimeMatch,
   CompatibilityCheck,
   RuntimeValidationResult,
+  RuntimeExplainRequest,
+  RuntimeExplainResponse,
 } from '../types/runtime'
 import { ListResponse } from '../types/common'
 
@@ -103,6 +105,15 @@ export const runtimesApi = {
     const params: Record<string, string> = { format }
     if (framework) params.framework = framework
     const response = await apiClient.get<RuntimeMatch>('/runtimes/recommend', { params })
+    return response.data
+  },
+
+  /**
+   * Ranks the ClusterServingRuntimes and the namespace's ServingRuntimes for a model, best
+   * first, with the reasons and exclusions OME's own selector applies.
+   */
+  explain: async (request: RuntimeExplainRequest): Promise<RuntimeExplainResponse> => {
+    const response = await apiClient.post<RuntimeExplainResponse>('/runtimes/explain', request)
     return response.data
   },
 
