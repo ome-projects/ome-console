@@ -43,6 +43,8 @@ export interface ServiceFormProps {
   onSuccess: (service: InferenceService) => void
   backLink?: string
   backLinkText?: string
+  /** The tab shown first; the edit page opens on the YAML. */
+  defaultTab?: ServiceFormTab
 }
 
 type SubmitStatus =
@@ -127,6 +129,7 @@ export function ServiceForm({
   onSuccess,
   backLink = '/services',
   backLinkText = 'Back to Services',
+  defaultTab = 'form',
 }: ServiceFormProps) {
   const isEditMode = mode === 'edit'
   const form = useForm<ServiceFormValues>({
@@ -139,7 +142,7 @@ export function ServiceForm({
     if (initialData) reset(serviceToFormValues(initialData))
   }, [initialData, reset])
 
-  const [activeTab, setActiveTab] = useState<ServiceFormTab>('form')
+  const [activeTab, setActiveTab] = useState<ServiceFormTab>(defaultTab)
   const [yamlDraft, setYamlDraft] = useState<string | null>(null)
   const [status, setStatus] = useState<SubmitStatus>({ kind: 'idle' })
   const createService = useCreateService()
