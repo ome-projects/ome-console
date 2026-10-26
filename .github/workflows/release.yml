@@ -43,8 +43,12 @@ jobs:
         id: commit
         run: |
           # An existing tag releases its own commit. A tag that does not exist yet (manual run)
-          # releases the commit this run started from.
-          if sha=$(gh api "repos/$GH_REPO/commits/tags/$TAG" --jq .sha 2>/dev/null); then
+          # releases the commit this run started from. Any lookup error fails the step: falling
+          # back would check CI on one commit while the release takes the existing tag's.
+          # matching-refs lists by prefix and answers [] for no match; TAG is validated above.
+          ref=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG" --jq ".[] | select(.ref == \"refs/tags/$TAG\") | .ref")
+          if [[ -n "$ref" ]]; then
+            sha=$(gh api "repos/$GH_REPO/commits/tags/$TAG" --jq .sha)
             echo "Releasing $TAG at $sha"
           else
             sha=$GITHUB_SHA

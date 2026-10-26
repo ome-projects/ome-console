@@ -119,7 +119,7 @@ All submissions, including submissions by project members, require a code review
 
 ## Releasing
 
-A release is a `vX.Y.Z` tag (`vX.Y.Z-rc.N` for a prerelease) with a GitHub Release. Nothing is built or pushed to a registry: people run the console from the tagged source.
+A release is a `vX.Y.Z` tag (`vX.Y.Z-<pre>` such as `v0.1.0-rc.1` for a prerelease) with a GitHub Release. Nothing is built or pushed to a registry: people run the console from the tagged source.
 
 1. Pick the commit to release, normally the head of `main`, and check that CI passed on it.
 2. Push the tag (`git tag v0.1.0 <sha> && git push origin v0.1.0`), or run the **Release** workflow from the Actions tab with the tag. A manual run releases the head of the branch you run it from, and GitHub creates the tag when you publish.
