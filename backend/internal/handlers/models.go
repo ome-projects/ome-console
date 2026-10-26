@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/ome/ome-console/backend/internal/k8s"
 )
@@ -103,9 +105,9 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 
 	model := &unstructured.Unstructured{Object: requestBody.Model}
 
-	kind, secretNamespace := "ClusterBaseModel", "ome"
+	res, secretNamespace := k8s.ClusterBaseModelResource, "ome"
 	if namespace != "" {
-		kind, secretNamespace = "BaseModel", namespace
+		res, secretNamespace = k8s.BaseModelResource, namespace
 		model.SetNamespace(namespace)
 	}
 
@@ -114,25 +116,37 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 		model.SetAPIVersion("ome.io/v1beta1")
 	}
 	if model.GetKind() == "" {
-		model.SetKind(kind)
+		model.SetKind(res.Kind)
 	}
 
-	// If HuggingFace token provided, create secret and set storageKey
+	// If HuggingFace token provided, store it in a Secret and point spec.storage.key at it
+	var secretName string
+	var secretCreated bool
 	if requestBody.HuggingfaceToken != "" {
-		secretName := model.GetName() + "-hf-token"
+		// An existing model keeps its token: refuse before its Secret is touched.
+		if h.modelExists(ctx, namespace, model.GetName()) {
+			writeError(c, h.logger, "Failed to create model",
+				apierrors.NewAlreadyExists(res.GVR().GroupResource(), model.GetName()))
+			return
+		}
+
+		secretName = model.GetName() + "-hf-token"
 		if err := unstructured.SetNestedField(model.Object, secretName, "spec", "storage", "key"); err != nil {
 			writeBadRequest(c, h.logger, "Invalid model spec", err)
 			return
 		}
 
-		if err := h.k8sClient.CreateHuggingFaceTokenSecret(ctx, secretName, secretNamespace, requestBody.HuggingfaceToken); err != nil {
+		var err error
+		secretCreated, err = h.k8sClient.EnsureHuggingFaceTokenSecret(ctx, secretName, secretNamespace, requestBody.HuggingfaceToken)
+		if err != nil {
 			writeError(c, h.logger, "Failed to create HuggingFace token secret", err)
 			return
 		}
 
-		h.logger.Info("Created HuggingFace token secret",
+		h.logger.Info("Stored HuggingFace token secret",
 			zap.String("secretName", secretName),
-			zap.String("namespace", secretNamespace))
+			zap.String("namespace", secretNamespace),
+			zap.Bool("created", secretCreated))
 	}
 
 	var created *unstructured.Unstructured
@@ -143,15 +157,37 @@ func (h *ModelsHandler) create(c *gin.Context, namespace string) {
 		created, err = h.k8sClient.CreateBaseModel(ctx, namespace, model)
 	}
 	if err != nil {
+		// A rejected model was not stored, so the Secret made for it goes too and a corrected
+		// retry starts clean. After any other error the model may exist: the Secret stays, and a
+		// retry reuses it.
+		if secretCreated && rejected(err) {
+			if delErr := h.k8sClient.DeleteSecret(ctx, secretName, secretNamespace); delErr != nil {
+				h.logger.Warn("Failed to remove HuggingFace token secret",
+					zap.String("secretName", secretName),
+					zap.String("namespace", secretNamespace),
+					zap.Error(delErr))
+			}
+		}
 		writeError(c, h.logger, "Failed to create model", err)
 		return
 	}
 
 	h.logger.Info("Model created successfully",
-		zap.String("kind", kind),
+		zap.String("kind", res.Kind),
 		zap.String("namespace", namespace),
 		zap.String("name", created.GetName()))
 	c.JSON(http.StatusCreated, created.Object)
+}
+
+// modelExists reports whether the cache already holds the model that create would make.
+func (h *ModelsHandler) modelExists(ctx context.Context, namespace, name string) bool {
+	var err error
+	if namespace == "" {
+		_, err = h.k8sClient.GetClusterBaseModel(ctx, name)
+	} else {
+		_, err = h.k8sClient.GetBaseModel(ctx, namespace, name)
+	}
+	return err == nil
 }
 
 // Update handles PUT /api/v1/models/:name
