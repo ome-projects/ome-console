@@ -10,7 +10,6 @@ import { ConfirmDeleteModal } from '@/components/ui/Modal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { ResourceRequirements } from '@/components/ui/ResourceRequirements'
 import { KeyValueList } from '@/components/ui/KeyValueList'
 import { NodeList } from '@/components/ui/NodeList'
 import { SpecCard } from '@/components/ui/SpecCard'
@@ -367,9 +366,6 @@ export default function ModelDetailPage() {
             </div>
           </div>
         )}
-
-        {/* Resource Requirements */}
-        <ResourceRequirements resources={model.spec.resources} />
 
         {/* Raw Specification - Collapsible */}
         <div className="rounded-lg bg-white p-6 shadow">

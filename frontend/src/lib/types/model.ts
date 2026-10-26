@@ -1,32 +1,29 @@
-// Import shared types from common
-import { ObjectMeta, ResourceRequirements } from './common'
+// BaseModel and ClusterBaseModel types: aliases over the generated OME API types.
 
-// Re-export for backwards compatibility
+import type * as gen from './generated/ome.v1beta1'
+import type { ObjectMeta, Resource } from './common'
+
 export type { ResourceRequirements } from './common'
 
-export interface ModelFormat {
-  name: string
-  version?: string
-  operator?: 'Equal' | 'GreaterThan' | 'GreaterThanOrEqual'
-  weight?: number
-}
+export type ModelFormat = gen.ModelFormat
+export type ModelFrameworkSpec = gen.ModelFrameworkSpec
+export type StorageSpec = gen.StorageSpec
+export type ModelExtensionSpec = gen.ModelExtensionSpec
+export type ModelStatusSpec = gen.ModelStatusSpec
+export type ModelState = gen.ModelStatusSpecState
+export type ModelDistribution = gen.BaseModelSpecDistribution
+export type DownloadPolicy = gen.StorageSpecDownloadPolicy
 
-export interface ModelFrameworkSpec {
-  name: string
-  version?: string
-  operator?: 'Equal' | 'GreaterThan' | 'GreaterThanOrEqual'
-  weight?: number
-}
+export {
+  ModelStatusSpecStateValues as ModelStates,
+  BaseModelSpecDistributionValues as ModelDistributions,
+  StorageSpecDownloadPolicyValues as DownloadPolicies,
+} from './generated/ome.v1beta1'
 
-export interface StorageSpec {
-  path?: string
-  schemaPath?: string
-  parameters?: Record<string, string>
-  key?: string
-  storageUri?: string
-  nodeSelector?: Record<string, string>
-}
-
+/**
+ * `spec.modelConfiguration` is free-form in the API. These are the keys OME's metadata
+ * extractor writes from the Hugging Face config; anything else is passed through.
+ */
 export interface ModelConfigurationSpec {
   architecture?: string
   model_type?: string
@@ -34,59 +31,21 @@ export interface ModelConfigurationSpec {
   torch_dtype?: string
   transformers_version?: string
   has_vision?: boolean
+  [key: string]: unknown
 }
 
-export interface ModelExtensionSpec {
-  displayName?: string
-  version?: string
-  disabled?: boolean
-  vendor?: string
-  compartmentID?: string
-}
-
-export interface BaseModelSpec {
-  modelFormat: ModelFormat
-  modelType?: string
-  modelFramework?: ModelFrameworkSpec
-  modelArchitecture?: string
-  quantization?: string
-  modelParameterSize?: string
-  modelCapabilities?: string[]
+export type BaseModelSpec = Omit<gen.BaseModelSpec, 'modelConfiguration'> & {
   modelConfiguration?: ModelConfigurationSpec
-  storage?: StorageSpec
-  resources?: ResourceRequirements
-  displayName?: string
-  version?: string
-  disabled?: boolean
-  vendor?: string
-  compartmentID?: string
-  servingMode?: string[]
-  maxTokens?: number
-  additionalMetadata?: Record<string, string>
 }
 
-export interface ModelStatusSpec {
-  lifecycle?: string
-  state: 'Creating' | 'Importing' | 'In_Transit' | 'In_Training' | 'Ready' | 'Failed'
-  nodesReady?: string[]
-  nodesFailed?: string[]
-}
-
-export interface ClusterBaseModel {
-  apiVersion: string
-  kind: string
-  metadata: ObjectMeta
+export type ClusterBaseModel = Omit<Resource<gen.ClusterBaseModel>, 'spec'> & {
   spec: BaseModelSpec
-  status?: ModelStatusSpec
 }
 
 // BaseModel is namespace-scoped
-export interface BaseModel {
-  apiVersion: string
-  kind: string
+export type BaseModel = Omit<Resource<gen.BaseModel>, 'metadata' | 'spec'> & {
   metadata: ObjectMeta & { namespace: string }
   spec: BaseModelSpec
-  status?: ModelStatusSpec
 }
 
 // Union type for both model types

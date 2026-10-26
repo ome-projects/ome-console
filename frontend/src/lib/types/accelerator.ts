@@ -1,24 +1,11 @@
-// AcceleratorClass TypeScript types
+// AcceleratorClass types: aliases over the generated OME API types.
 
-export interface AcceleratorClass {
-  apiVersion: string
-  kind: string
-  metadata: {
-    name: string
-    creationTimestamp?: string
-    [key: string]: any
-  }
-  spec: AcceleratorClassSpec
-  status?: AcceleratorClassStatus
-}
+import type * as gen from './generated/ome.v1beta1'
+import type { Resource } from './common'
 
-export interface AcceleratorClassSpec {
-  acceleratorType?: string
-  acceleratorCount?: number
-  memoryGB?: number
-  [key: string]: any
-}
-
-export interface AcceleratorClassStatus {
-  [key: string]: any
-}
+export type AcceleratorClass = Resource<gen.AcceleratorClass>
+export type AcceleratorClassSpec = gen.AcceleratorClassSpec
+export type AcceleratorClassStatus = gen.AcceleratorClassStatus
+export type AcceleratorCapabilities = gen.AcceleratorCapabilities
+export type AcceleratorDiscovery = gen.AcceleratorDiscovery
+export type AcceleratorResource = gen.AcceleratorResource
