@@ -11,6 +11,8 @@ repos:
       - id: check-yaml
         args: [--allow-multiple-documents, --unsafe]
       - id: check-added-large-files
+        # api/ome/swagger.json (vendored OME API) is just over the 500 KB default
+        args: ['--maxkb=1024']
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
       - id: detect-private-key
@@ -26,7 +28,8 @@ repos:
         exclude: |
           (?x)^(
             .*go\.sum$|
-            .*package-lock\.json$
+            .*package-lock\.json$|
+            api/ome/.*\.json$
           )$
 
   - repo: local
