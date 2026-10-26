@@ -1,0 +1,124 @@
+name: Release
+
+# Opens a draft GitHub Release for a version tag. Nothing is built: the console runs from the
+# tagged source. Push a vX.Y.Z tag, or run this workflow with the tag to release the head of the
+# branch it runs on; GitHub creates the tag when the draft is published. See CONTRIBUTING.md.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag, e.g. v0.1.0 or v0.1.0-rc.1'
+        required: true
+        type: string
+
+permissions:
+  contents: write # create the release
+  checks: read # read the CI result of the commit being released
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: Draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate the tag
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a version tag such as v0.1.0 or v0.1.0-rc.1"
+            exit 1
+          fi
+
+      - name: Resolve the commit
+        id: commit
+        run: |
+          # An existing tag releases its own commit. A tag that does not exist yet (manual run)
+          # releases the commit this run started from. Any lookup error fails the step: falling
+          # back would check CI on one commit while the release takes the existing tag's.
+          # matching-refs lists by prefix and answers [] for no match; TAG is validated above.
+          ref=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG" --jq ".[] | select(.ref == \"refs/tags/$TAG\") | .ref")
+          if [[ -n "$ref" ]]; then
+            sha=$(gh api "repos/$GH_REPO/commits/tags/$TAG" --jq .sha)
+            echo "Releasing $TAG at $sha"
+          else
+            sha=$GITHUB_SHA
+            echo "Tag $TAG does not exist yet; releasing $sha from $GITHUB_REF_NAME"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Require green CI on the commit
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          # CI (ci.yml) runs on every push to main and release-*. Wait while it is still running.
+          for attempt in $(seq 1 40); do
+            run=$(gh api "repos/$GH_REPO/commits/$SHA/check-runs?check_name=CI%20Summary" \
+              --jq '.check_runs | sort_by(.started_at) | last | if . then "\(.status)/\(.conclusion)" else "" end')
+            case "$run" in
+              completed/success)
+                echo "CI passed on $SHA"
+                exit 0
+                ;;
+              completed/*)
+                echo "::error::CI did not pass on $SHA ($run)"
+                exit 1
+                ;;
+              "")
+                if (( attempt > 4 )); then
+                  echo "::error::No CI run on $SHA. Release a commit that was pushed to main or a release-* branch."
+                  exit 1
+                fi
+                ;;
+            esac
+            echo "Waiting for CI on $SHA (${run:-not started}), attempt $attempt/40"
+            sleep 30
+          done
+          echo "::error::CI did not finish on $SHA within 20 minutes; re-run this workflow once it has."
+          exit 1
+
+      - name: Create the draft
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          if url=$(gh release view "$TAG" --json url --jq .url 2>/dev/null); then
+            # Never touch an existing release: its notes may already be edited or published.
+            echo "Release $TAG already exists, leaving it as is: $url"
+            exit 0
+          fi
+
+          cat > notes.md <<EOF
+          ## Highlights
+
+          <!-- What this release adds or fixes for people running the console. -->
+
+          ## Compatibility
+
+          <!-- The OME versions this release was tested against, e.g. OME v1.2.x. -->
+
+          ## Running this release
+
+          \`\`\`bash
+          git clone --branch $TAG https://github.com/$GH_REPO.git
+          cd ${GH_REPO#*/} && make install && make dev
+          \`\`\`
+
+          The backend reads \`~/.kube/config\`, or the file named by \`KUBECONFIG\`.
+          EOF
+
+          # The merged PRs since the previous release are appended below these notes.
+          flags=(--draft --target "$SHA" --title "OME Console ${TAG#v}" --notes-file notes.md --generate-notes)
+          if [[ "$TAG" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$TAG" "${flags[@]}"
+          echo "Draft created: $(gh release view "$TAG" --json url --jq .url)"
