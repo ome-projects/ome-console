@@ -62,3 +62,39 @@ export interface RuntimeValidationResult {
   errors: string[]
   warnings: string[]
 }
+
+// Runtime ranking from `POST /runtimes/explain`.
+
+/** A model to rank runtimes for: an existing object by reference, or an inline BaseModel spec. */
+export type RuntimeExplainModel =
+  | { name: string; kind: 'BaseModel' | 'ClusterBaseModel' }
+  | Record<string, unknown>
+
+export interface RuntimeExplainRequest {
+  namespace: string
+  model: RuntimeExplainModel
+  /** Pooled accelerator classes the runtime must support (`spec.acceleratorSelector` and overrides). */
+  acceleratorClasses?: string[]
+  deploymentMode?: string
+}
+
+export interface RuntimeCandidate {
+  runtime: {
+    name: string
+    kind: 'ServingRuntime' | 'ClusterServingRuntime'
+    namespace?: string
+  }
+  /** Whether the runtime can serve the model; naming an incompatible runtime is only a warning. */
+  compatible: boolean
+  /** Whether OME's auto-selection would consider this runtime. */
+  autoSelect: boolean
+  score: number
+  reasons: string[]
+  /** Why the runtime is excluded, when it is not compatible. */
+  exclusion?: string
+}
+
+/** Candidates ranked best first. */
+export interface RuntimeExplainResponse {
+  items: RuntimeCandidate[]
+}

@@ -1,6 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { runtimesApi } from '../api/runtimes'
-import { ClusterServingRuntime } from '../types/runtime'
+import { isApiError } from '../types/api'
+import {
+  ClusterServingRuntime,
+  RuntimeExplainRequest,
+  RuntimeExplainResponse,
+} from '../types/runtime'
 import {
   createResourceHooks,
   createResourceMutation,
@@ -79,6 +84,30 @@ export function useRuntimeRecommendation(format?: string, framework?: string) {
     queryKey: queryKeys.related(RESOURCE_KEY, 'recommend', 'search', format, framework),
     queryFn: () => runtimesApi.getRecommendation(format!, framework),
     enabled: !!format,
+    staleTime: DEFAULT_QUERY_CONFIG.staleTime,
+    gcTime: DEFAULT_QUERY_CONFIG.gcTime,
+    retry: DEFAULT_QUERY_CONFIG.retry,
+    retryDelay: DEFAULT_QUERY_CONFIG.retryDelay,
+  })
+}
+
+/**
+ * Ranks runtimes for a model through `POST /runtimes/explain`. Resolves to `null` when the
+ * backend does not serve the endpoint (404 on an older backend), so callers can fall back to
+ * an unranked runtime list.
+ */
+export function useRuntimeExplain(request?: RuntimeExplainRequest) {
+  return useQuery({
+    queryKey: queryKeys.related(RESOURCE_KEY, 'explain', 'rank', request),
+    queryFn: async (): Promise<RuntimeExplainResponse | null> => {
+      try {
+        return await runtimesApi.explain(request!)
+      } catch (error) {
+        if (isApiError(error) && error.status === 404) return null
+        throw error
+      }
+    },
+    enabled: !!request,
     staleTime: DEFAULT_QUERY_CONFIG.staleTime,
     gcTime: DEFAULT_QUERY_CONFIG.gcTime,
     retry: DEFAULT_QUERY_CONFIG.retry,
