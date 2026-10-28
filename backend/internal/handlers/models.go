@@ -383,19 +383,7 @@ func (h *ModelsHandler) GetEvents(c *gin.Context) {
 		return
 	}
 
-	// Convert to simplified format
-	modelEvents := make([]ModelEvent, 0, len(events.Items))
-	for _, e := range events.Items {
-		modelEvents = append(modelEvents, ModelEvent{
-			Type:           e.Type,
-			Reason:         e.Reason,
-			Message:        e.Message,
-			Count:          e.Count,
-			FirstTimestamp: e.FirstTimestamp.Format("2006-01-02T15:04:05Z07:00"),
-			LastTimestamp:  e.LastTimestamp.Format("2006-01-02T15:04:05Z07:00"),
-			Source:         e.Source.Component,
-		})
-	}
+	modelEvents := toObjectEvents(events.Items)
 
 	c.JSON(http.StatusOK, gin.H{
 		"events": modelEvents,

@@ -310,9 +310,15 @@ PUT    /api/v1/namespaces/:ns/services/:name     # Update InferenceService (body
 PATCH  /api/v1/namespaces/:ns/services/:name     # Patch InferenceService
 DELETE /api/v1/namespaces/:ns/services/:name     # Delete InferenceService
 GET    /api/v1/namespaces/:ns/services/:name/status
+GET    /api/v1/namespaces/:ns/services/:name/logs    # Pod logs as NDJSON; ?component=&instance=&revision=&container=&tailLines=500&follow=true
+GET    /api/v1/namespaces/:ns/events?kind=&name=     # Kubernetes events recorded for one object, newest first
+GET    /api/v1/replicas                              # List InferenceReplicas across namespaces (OME v1.3; 404 CAPABILITY_MISSING otherwise)
+GET    /api/v1/namespaces/:ns/replicas[/:name]       # InferenceReplicas in a namespace, same verbs as services
 ```
 
 The single-object service routes also answer at `/api/v1/services/:name?namespace=<ns>`; a namespaced resource without a namespace is a `400`.
+
+Logs are selected with the labels `kubectl ome logs` uses (`ome.io/inferenceservice`, `component`, `ome.io/managed-by=OMENative` with `ome.io/instance-index`, `ome.io/revision-hash`), read from the `ome-container` container unless `container=` says otherwise, and cover at most 20 pods (a `{"notice": ...}` line says when more matched). Each line is `{"pod", "container", "ts", "line"}`; `follow=true` streams for up to 10 minutes. The logs and events endpoints need RBAC to list `pods`, get `pods/log` and list `events` in the namespace.
 
 ### Writes: dry run, field validation, patches
 

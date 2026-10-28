@@ -84,5 +84,6 @@ var (
 	ClusterBaseModelResource      = MustResource("clusterbasemodels")
 	ServingRuntimeResource        = MustResource("servingruntimes")
 	ClusterServingRuntimeResource = MustResource("clusterservingruntimes")
+	InferenceReplicaResource      = MustResource("inferencereplicas")
 	AcceleratorClassResource      = MustResource("acceleratorclasses")
 )
