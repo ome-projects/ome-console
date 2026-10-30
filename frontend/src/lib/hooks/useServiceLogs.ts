@@ -33,7 +33,11 @@ export function useServiceLogs(
   const key = params ? JSON.stringify(params) : null
 
   useEffect(() => {
-    if (!key || !enabled) return
+    // An aborted stream does not clear isStreaming itself, so a closed one must clear it here.
+    if (!key || !enabled) {
+      setIsStreaming(false)
+      return
+    }
     const streamParams = JSON.parse(key) as LogStreamParams
     const controller = new AbortController()
     const pending: LogLine[] = []

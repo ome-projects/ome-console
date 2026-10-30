@@ -66,4 +66,24 @@ describe('useServiceLogs', () => {
     renderHook(() => useServiceLogs({ namespace: 'a', name: 'b' }, { enabled: false }))
     expect(mockedStream).not.toHaveBeenCalled()
   })
+
+  it('stops reporting a followed stream once it is disabled', () => {
+    // A followed stream stays open until its signal aborts.
+    mockedStream.mockImplementation(
+      (_params, handlers?: LogStreamHandlers) =>
+        new Promise<void>((resolve) => {
+          if (!handlers?.signal) return resolve()
+          handlers.signal.addEventListener('abort', () => resolve())
+        })
+    )
+    const { result, rerender } = renderHook(
+      ({ enabled }) =>
+        useServiceLogs({ namespace: 'team-a', name: 'llama', follow: true }, { enabled }),
+      { initialProps: { enabled: true } }
+    )
+    expect(result.current.isStreaming).toBe(true)
+
+    rerender({ enabled: false })
+    expect(result.current.isStreaming).toBe(false)
+  })
 })
