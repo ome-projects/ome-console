@@ -1,83 +1,22 @@
-// InferenceService TypeScript types
+// InferenceService types: aliases over the generated OME API types (see generated/ome.v1beta1.ts).
 
-// Import shared types from common
-import { ObjectMeta, ResourceRequirements, Condition } from './common'
+import type * as gen from './generated/ome.v1beta1'
+import type { Resource } from './common'
 
-// Re-export for backwards compatibility
-export type { ResourceRequirements, Condition } from './common'
+export type { Condition, ResourceRequirements } from './common'
 
-export interface InferenceService {
-  apiVersion: string
-  kind: string
-  metadata: ObjectMeta
-  spec: InferenceServiceSpec
-  status?: InferenceServiceStatus
-}
+export type InferenceService = Resource<gen.InferenceService>
+export type InferenceServiceSpec = gen.InferenceServiceSpec
+export type InferenceServiceStatus = gen.InferenceServiceStatus
+export type ModelRef = gen.ModelRef
+export type ServingRuntimeRef = gen.ServingRuntimeRef
+export type EngineSpec = gen.EngineSpec
+export type DecoderSpec = gen.DecoderSpec
+export type RouterSpec = gen.RouterSpec
+export type ComponentExtensionSpec = gen.ComponentExtensionSpec
+export type ComponentAutoscaler = gen.ComponentAutoscaler
+export type LifecycleSpec = gen.LifecycleSpec
+export type ComponentStatusSpec = gen.ComponentStatusSpec
+export type DeploymentMode = gen.InferenceServiceSpecDeploymentMode
 
-export interface InferenceServiceSpec {
-  model?: ModelRef
-  runtime?: RuntimeRef
-  engine?: ComponentSpec
-  decoder?: ComponentSpec
-  router?: ComponentSpec
-  transformer?: TransformerSpec
-  explainer?: ExplainerSpec
-}
-
-export interface ModelRef {
-  name?: string
-  kind?: string
-  fineTunedWeights?: string[]
-}
-
-export interface RuntimeRef {
-  name?: string
-}
-
-export interface ComponentSpec {
-  minReplicas?: number
-  maxReplicas?: number
-  resources?: ResourceRequirements
-  nodeSelector?: Record<string, string>
-  tolerations?: { key?: string; operator?: string; value?: string; effect?: string }[]
-  labels?: Record<string, string>
-  annotations?: Record<string, string>
-}
-
-export interface TransformerSpec {
-  containers?: { name: string; image: string; resources?: ResourceRequirements }[]
-  minReplicas?: number
-  maxReplicas?: number
-}
-
-export interface ExplainerSpec {
-  type?: string
-  containers?: { name: string; image: string; resources?: ResourceRequirements }[]
-  minReplicas?: number
-  maxReplicas?: number
-}
-
-/** OME has no `status.state` on InferenceServices; read readiness with `readyState(conditions)`. */
-export interface InferenceServiceStatus {
-  url?: string
-  address?: {
-    url?: string
-    internal?: string
-    external?: string
-  }
-  conditions?: Condition[]
-  modelStatus?: {
-    states?: Record<string, { state: string; reason?: string; message?: string }>
-    transitionStatus?: string
-  }
-  components?: Record<
-    string,
-    {
-      url?: string
-      address?: { url?: string }
-      traffic?: number
-      latestCreatedRevision?: string
-      latestReadyRevision?: string
-    }
-  >
-}
+export { InferenceServiceSpecDeploymentModeValues as DeploymentModes } from './generated/ome.v1beta1'

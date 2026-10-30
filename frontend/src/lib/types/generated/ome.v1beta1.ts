@@ -2305,7 +2305,7 @@ export interface InferenceServiceStatus {
   /** Statuses for the components of the InferenceService */
   components?: Record<string, ComponentStatusSpec>
   /** Conditions the latest available observations of a resource's current state. */
-  conditions?: OpaqueObject[]
+  conditions?: Condition[]
   /** LastRuntimeSyncToken is the ome.io/runtime-sync annotation value at last pin advance; the controller advances the pin when the live annotation differs from this. */
   lastRuntimeSyncToken?: string
   /** MigrationHistory is a rolling window of OMENative migration requests processed against this InferenceService. Bounded to the most recent entries; older entries are dropped (and optionally archived to a controller-owned ConfigMap). */
