@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -75,6 +76,15 @@ func main() {
 
 	// Create API server
 	server := api.NewServer(k8sClient, logger)
+
+	// Bound on the instance rows one InferenceReplica status may expand to (default 20000)
+	if v := os.Getenv("OME_MAX_DECODED_INSTANCES"); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || n == 0 {
+			logger.Fatal("Invalid OME_MAX_DECODED_INSTANCES: want a positive integer", zap.String("value", v))
+		}
+		server.MaxDecodedInstances = n
+	}
 
 	// Setup routes
 	router := server.SetupRoutes()
