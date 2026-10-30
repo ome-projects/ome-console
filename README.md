@@ -285,9 +285,11 @@ POST   /api/v1/runtimes                  # Create ClusterServingRuntime
 PUT    /api/v1/runtimes/:name            # Update ClusterServingRuntime
 DELETE /api/v1/runtimes/:name            # Delete ClusterServingRuntime
 POST   /api/v1/runtimes/:name/clone      # Clone a runtime
-GET    /api/v1/runtimes/compatible       # Find compatible runtimes
-GET    /api/v1/runtimes/recommend        # Get runtime recommendation
-POST   /api/v1/runtimes/validate         # Validate runtime config
+POST   /api/v1/runtimes/explain          # Rank runtimes for a model by OME's selection rules (body below)
+GET    /api/v1/runtimes/compatible       # Runtimes whose entries name ?format= (and ?framework=), best first
+GET    /api/v1/runtimes/recommend        # The runtime OME would auto-select for ?format= (and ?framework=)
+GET    /api/v1/runtimes/:name/compatibility  # Check a named runtime, with the spec it inherits (?namespace= for a ServingRuntime)
+POST   /api/v1/runtimes/validate         # Check a runtime manifest against the selection rules
 GET    /api/v1/runtimes/fetch-yaml       # Fetch YAML from URL
 
 # Namespace-scoped ServingRuntimes
@@ -299,6 +301,8 @@ PATCH  /api/v1/namespaces/:ns/runtimes/:name     # Patch ServingRuntime
 DELETE /api/v1/namespaces/:ns/runtimes/:name     # Delete ServingRuntime
 GET    /api/v1/namespaces/:ns/runtimes/:name/status
 ```
+
+`POST /api/v1/runtimes/explain` runs the runtime selection OME runs for an InferenceService that names no runtime (`backend/internal/runtimeselect`, after the OME reference docs under `reference/matching`). The body is `{"namespace": "team-a", "model": <BaseModel spec> | {"name": "llama", "kind": "BaseModel" | "ClusterBaseModel"}, "acceleratorClasses": ["nvidia-h100"], "deploymentMode": "OMENative"}`; the last two are optional, `kind` defaults to `ClusterBaseModel`, a `BaseModel` is looked up in `namespace`, and a model that does not exist is a `404`. The answer is `{"items": [{"runtime": {"name", "kind", "namespace"}, "compatible", "autoSelect", "score", "reasons": [...], "exclusion"}]}`: every ClusterServingRuntime and every ServingRuntime in `namespace`, in the order OME ranks the runtimes it could pick on its own (ServingRuntimes first, then the score `(format weight + framework weight) × priority`, then the closest `modelSizeRange`, then the name), followed by the runtimes OME would not pick, with `exclusion` naming the first rule each one fails in OME's wording. A compatible runtime with no `autoSelect: true` entry is usable only when named, which its last reason says. Like OME's auto-selection, `explain` reads each runtime's own spec; `GET /api/v1/runtimes/:name/compatibility` reads the spec a runtime inherits through `ome.io/inherit-from`, as OME does for a named runtime. The `compatible`, `recommend` and `:name/compatibility` routes take only format and framework names, so they match on the names alone and ignore the versions, architecture and quantization that an entry requires.
 
 ### Services
 ```
