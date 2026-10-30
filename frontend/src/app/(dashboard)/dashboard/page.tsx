@@ -7,6 +7,7 @@ import { useNamespaces } from '@/lib/hooks/useNamespaces'
 import { useRuntimes } from '@/lib/hooks/useRuntimes'
 import { useServices } from '@/lib/hooks/useServices'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { DataTable, TableLink, TableText } from '@/components/ui/DataTable'
 import { Button, ButtonIcons } from '@/components/ui/Button'
@@ -20,10 +21,12 @@ export default function DashboardPage() {
   // ClusterBaseModel plus the BaseModels of one namespace chosen here.
   const [selectedNamespace, setSelectedNamespace] = useState<string>('')
 
-  const { data: clusterModels, isLoading: modelsLoading } = useModels()
-  const { data: namespaceModels, isLoading: namespaceModelsLoading } = useModels(
-    selectedNamespace || undefined
-  )
+  const { data: clusterModels, isLoading: modelsLoading, error: modelsError } = useModels()
+  const {
+    data: namespaceModels,
+    isLoading: namespaceModelsLoading,
+    error: namespaceModelsError,
+  } = useModels(selectedNamespace || undefined)
   const { data: namespacesData } = useNamespaces()
   const { data: runtimesData, isLoading: runtimesLoading } = useRuntimes()
   const { data: servicesData, isLoading: servicesLoading } = useServices()
@@ -32,12 +35,18 @@ export default function DashboardPage() {
     return <LoadingState message="Loading dashboard..." />
   }
 
+  // The selected namespace's models load and fail in place, so the rest of the dashboard and
+  // the namespace selector stay on screen meanwhile.
+  const namespaceModelsPending = !!selectedNamespace && namespaceModelsLoading
+  const modelsLoadError = modelsError || (selectedNamespace ? namespaceModelsError : null)
+
   const models: ClusterBaseModel[] = [
     ...(clusterModels?.items ?? []),
     ...(selectedNamespace && !namespaceModelsLoading ? (namespaceModels?.items ?? []) : []),
   ]
   const services = servicesData?.items ?? []
   const readyServices = services.filter((s) => readyState(s.status?.conditions) === 'Ready')
+  const notReadyServices = services.filter((s) => readyState(s.status?.conditions) === 'NotReady')
 
   const recentModels = [...models]
     .sort((a, b) =>
@@ -82,14 +91,16 @@ export default function DashboardPage() {
   const stats: StatItem[] = [
     {
       label: 'Total Models',
-      value: models.length,
+      value: namespaceModelsPending ? '…' : models.length,
       icon: StatIcons.models,
       href: '/models',
       variant: 'primary',
     },
     {
       label: 'Ready Models',
-      value: models.filter((m) => m.status?.state === 'Ready').length,
+      value: namespaceModelsPending
+        ? '…'
+        : models.filter((m) => m.status?.state === 'Ready').length,
       icon: StatIcons.ready,
       href: '/models',
       variant: 'success',
@@ -117,7 +128,7 @@ export default function DashboardPage() {
     },
     {
       label: 'Not Ready Services',
-      value: services.length - readyServices.length,
+      value: notReadyServices.length,
       icon: StatIcons.failed,
       href: '/services',
       variant: 'muted',
@@ -147,12 +158,14 @@ export default function DashboardPage() {
       />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {!!modelsLoadError && <ErrorState error={modelsLoadError} compact className="mb-6" />}
         <StatsGrid stats={stats} columns={3} />
 
         <DataTable
           title="Recent Models"
           columns={columns}
           data={recentModels}
+          loading={namespaceModelsPending}
           keyExtractor={resourceKey}
           headerActions={
             <Link
