@@ -191,3 +191,32 @@ func TestReplicas_NotServedIsCapabilityMissing(t *testing.T) {
 		t.Fatalf("code %q", body.Code)
 	}
 }
+
+func TestBelongsToService(t *testing.T) {
+	replica := func(name, label, parent string) *unstructured.Unstructured {
+		u := newObject("InferenceReplica", "team-a", name, nil)
+		if label != "" {
+			u.SetLabels(map[string]string{k8s.InferenceServiceLabel: label})
+		}
+		if parent != "" {
+			_ = unstructured.SetNestedField(u.Object, parent, "spec", "parentRef", "name")
+		}
+		return u
+	}
+	for _, tc := range []struct {
+		name  string
+		u     *unstructured.Unstructured
+		match bool
+	}{
+		{"labelled", replica("any", "llama", ""), true},
+		{"parentRef", replica("any", "", "llama"), true},
+		{"projected name without label or parentRef", replica("llama-engine", "", ""), true},
+		{"other name without label or parentRef", replica("llama-proxy", "", ""), false},
+		{"projected name labelled for another service", replica("llama-engine", "mistral", ""), false},
+		{"projected name owned by another service", replica("llama-decoder", "", "mistral"), false},
+	} {
+		if got := belongsToService(tc.u, "llama"); got != tc.match {
+			t.Errorf("%s: belongsToService = %v, want %v", tc.name, got, tc.match)
+		}
+	}
+}

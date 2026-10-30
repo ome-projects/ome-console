@@ -78,13 +78,13 @@ func (h *ReplicasHandler) Instances(c *gin.Context) {
 }
 
 // belongsToService reports whether a replica is one of the service's: labelled with it, naming it
-// as its parent, or, failing both, carrying the name OME gives projected replicas.
+// as its parent, or, failing both, carrying the name OME gives projected replicas. A label or
+// parentRef that names another service wins over the name.
 func belongsToService(u *unstructured.Unstructured, service string) bool {
-	if u.GetLabels()[k8s.InferenceServiceLabel] == service {
-		return true
-	}
-	if parent, _, _ := unstructured.NestedString(u.Object, "spec", "parentRef", "name"); parent == service {
-		return true
+	label := u.GetLabels()[k8s.InferenceServiceLabel]
+	parent, _, _ := unstructured.NestedString(u.Object, "spec", "parentRef", "name")
+	if label != "" || parent != "" {
+		return label == service || parent == service
 	}
 	for _, component := range []string{"engine", "decoder", "router"} {
 		if u.GetName() == service+"-"+component {
