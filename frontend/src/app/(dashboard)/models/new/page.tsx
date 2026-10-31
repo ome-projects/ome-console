@@ -5,8 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import {
   clusterBaseModelSchema,
   baseModelSchema,
-  type ClusterBaseModelFormData,
-  type BaseModelFormData,
+  type ModelFormValues,
 } from '@/lib/validation/model-schema'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -22,8 +21,11 @@ import {
   PVCStorage,
   AzureStorage,
   GitHubStorage,
+  ModelPackStorage,
+  NoDownloaderNote,
 } from '@/components/forms/storage'
 import { CollapsibleSection } from '@/components/forms/CollapsibleSection'
+import { FormSelect } from '@/components/forms/FormSelect'
 import {
   sectionStyles,
   gridStyles,
@@ -34,11 +36,34 @@ import {
   errorClassName,
   arrayFieldStyles,
 } from '@/components/forms/styles'
-import { MODEL_FORMAT_OPTIONS, MODEL_FRAMEWORK_OPTIONS } from '@/lib/constants/model-options'
+import {
+  MODEL_FORMAT_OPTIONS,
+  MODEL_FRAMEWORK_OPTIONS,
+  MODEL_DISTRIBUTION_OPTIONS,
+  MODEL_DISTRIBUTION_HELP,
+  DOWNLOAD_POLICY_OPTIONS,
+  DOWNLOAD_POLICY_HELP,
+} from '@/lib/constants/model-options'
 import { Icons } from '@/components/ui/Icons'
-import { exportAsYaml } from '@/lib/utils'
+import {
+  exportAsYaml,
+  buildPvcUri,
+  buildModelPackUri,
+  modelPackReference,
+  needsNodePath,
+} from '@/lib/utils'
 
-type StorageType = 'oci' | 'pvc' | 'hf' | 's3' | 'az' | 'gs' | 'github' | 'local' | 'vendor'
+type StorageType =
+  | 'oci'
+  | 'modelpack'
+  | 'pvc'
+  | 'hf'
+  | 's3'
+  | 'az'
+  | 'gs'
+  | 'github'
+  | 'local'
+  | 'vendor'
 type ModelScope = 'cluster' | 'namespace'
 
 export default function CreateModelPage() {
@@ -55,8 +80,12 @@ export default function CreateModelPage() {
   const [ociNamespace, setOciNamespace] = useState('')
   const [ociBucket, setOciBucket] = useState('')
   const [ociPrefix, setOciPrefix] = useState('')
+  const [pvcNamespace, setPvcNamespace] = useState('')
   const [pvcName, setPvcName] = useState('')
   const [pvcSubPath, setPvcSubPath] = useState('')
+  const [modelPackRegistry, setModelPackRegistry] = useState('')
+  const [modelPackRepository, setModelPackRepository] = useState('')
+  const [modelPackRef, setModelPackRef] = useState('')
   const [hfModelId, setHfModelId] = useState('')
   const [hfBranch, setHfBranch] = useState('main')
   const [huggingfaceToken, setHuggingfaceToken] = useState('')
@@ -76,8 +105,8 @@ export default function CreateModelPage() {
   const [vendorResourceType, setVendorResourceType] = useState('')
   const [vendorResourcePath, setVendorResourcePath] = useState('')
 
-  // Collapsible sections state (only for initial default open state)
-  const [showModelFormat] = useState(false)
+  // Collapsible sections state (only for initial default open state); the format is required
+  const [showModelFormat] = useState(true)
   const [showModelFramework] = useState(false)
 
   // Labels and Annotations state (key-value pairs)
@@ -93,7 +122,7 @@ export default function CreateModelPage() {
     setValue,
     getValues,
     formState: { errors },
-  } = useForm<ClusterBaseModelFormData | BaseModelFormData>({
+  } = useForm<ModelFormValues>({
     resolver: zodResolver(schema) as any,
     defaultValues: {
       apiVersion: 'ome.io/v1beta1',
@@ -129,9 +158,8 @@ export default function CreateModelPage() {
   // Update form when scope changes
   useEffect(() => {
     setValue('kind', modelScope === 'cluster' ? 'ClusterBaseModel' : 'BaseModel')
-    if (modelScope === 'namespace') {
-      setValue('metadata.namespace' as any, namespace)
-    }
+    // The loose schema keeps metadata.namespace, so clear it for a ClusterBaseModel
+    setValue('metadata.namespace', modelScope === 'namespace' ? namespace : undefined)
   }, [modelScope, namespace, setValue])
 
   // Build storage URI from components
@@ -143,10 +171,20 @@ export default function CreateModelPage() {
           uri = `oci://n/${ociNamespace}/b/${ociBucket}/o/${ociPrefix || ''}`
         }
         break
+      case 'modelpack':
+        uri = buildModelPackUri({
+          registry: modelPackRegistry,
+          repository: modelPackRepository,
+          ...modelPackReference(modelPackRef),
+        })
+        break
       case 'pvc':
-        if (pvcName && pvcSubPath) {
-          uri = `pvc://${pvcName}/${pvcSubPath}`
-        }
+        // A ClusterBaseModel names the claim's namespace; a BaseModel uses its own
+        uri = buildPvcUri({
+          namespace: modelScope === 'cluster' ? pvcNamespace : undefined,
+          pvcName,
+          subPath: pvcSubPath,
+        })
         break
       case 'hf':
         if (hfModelId) {
@@ -190,8 +228,13 @@ export default function CreateModelPage() {
     ociNamespace,
     ociBucket,
     ociPrefix,
+    modelScope,
+    pvcNamespace,
     pvcName,
     pvcSubPath,
+    modelPackRegistry,
+    modelPackRepository,
+    modelPackRef,
     hfModelId,
     hfBranch,
     s3Bucket,
@@ -212,13 +255,20 @@ export default function CreateModelPage() {
     setValue,
   ])
 
+  // The agent places hf://, oci://, modelpack:// and local:// weights under the path on each node
+  const pathRequired = needsNodePath(storageType)
+  // pvc:// models can't use Sharded (ome/pkg/validation/basemodel.go)
+  const distributionOptions = MODEL_DISTRIBUTION_OPTIONS.map((option) =>
+    option.value === 'Sharded' ? { ...option, disabled: storageType === 'pvc' } : option
+  )
+
   const handleExportYaml = () => {
     const data = getValues()
     const filename = data.metadata?.name || 'model'
     exportAsYaml(data, `${filename}.yaml`)
   }
 
-  const onSubmit = async (data: ClusterBaseModelFormData | BaseModelFormData) => {
+  const onSubmit = async (data: ModelFormValues) => {
     try {
       setError(null)
       setIsSubmitting(true)
@@ -248,16 +298,13 @@ export default function CreateModelPage() {
         },
       }
 
+      const token = storageType === 'hf' && huggingfaceToken ? huggingfaceToken : undefined
       if (modelScope === 'cluster') {
-        await modelsApi.create({
-          model: submissionData as ClusterBaseModelFormData,
-          huggingfaceToken: storageType === 'hf' && huggingfaceToken ? huggingfaceToken : undefined,
-        })
+        await modelsApi.create({ model: submissionData, huggingfaceToken: token })
       } else {
-        const baseModelData = submissionData as BaseModelFormData
-        await baseModelsApi.create(baseModelData.metadata.namespace, {
-          model: baseModelData,
-          huggingfaceToken: storageType === 'hf' && huggingfaceToken ? huggingfaceToken : undefined,
+        await baseModelsApi.create(namespace, {
+          model: { ...submissionData, metadata: { ...submissionData.metadata, namespace } },
+          huggingfaceToken: token,
         })
       }
 
@@ -360,8 +407,8 @@ export default function CreateModelPage() {
                       ))}
                     </select>
                   )}
-                  {(errors.metadata as any)?.namespace && (
-                    <p className={errorClassName}>{(errors.metadata as any).namespace.message}</p>
+                  {errors.metadata?.namespace && (
+                    <p className={errorClassName}>{errors.metadata.namespace.message}</p>
                   )}
                   <p className={helpTextClassName}>
                     Select an existing namespace. This does not create a new namespace.
@@ -442,6 +489,7 @@ export default function CreateModelPage() {
                 >
                   <option value="hf">HuggingFace (hf://)</option>
                   <option value="oci">OCI Object Storage (oci://)</option>
+                  <option value="modelpack">CNCF ModelPack (modelpack://)</option>
                   <option value="pvc">Persistent Volume (pvc://)</option>
                   <option value="s3">AWS S3 (s3://)</option>
                   <option value="gs">Google Cloud Storage (gs://)</option>
@@ -476,13 +524,29 @@ export default function CreateModelPage() {
                 />
               )}
 
+              {/* ModelPack Fields */}
+              {storageType === 'modelpack' && (
+                <ModelPackStorage
+                  registry={modelPackRegistry}
+                  repository={modelPackRepository}
+                  reference={modelPackRef}
+                  onRegistryChange={setModelPackRegistry}
+                  onRepositoryChange={setModelPackRepository}
+                  onReferenceChange={setModelPackRef}
+                />
+              )}
+
               {/* PVC Fields */}
               {storageType === 'pvc' && (
                 <PVCStorage
+                  clusterScoped={modelScope === 'cluster'}
+                  namespace={pvcNamespace}
                   name={pvcName}
                   subPath={pvcSubPath}
+                  onNamespaceChange={setPvcNamespace}
                   onNameChange={setPvcName}
                   onSubPathChange={setPvcSubPath}
+                  modelNamespace={namespace}
                 />
               )}
 
@@ -585,10 +649,12 @@ export default function CreateModelPage() {
                 </>
               )}
 
-              {/* Storage Path - REQUIRED */}
+              <NoDownloaderNote uriOrScheme={storageType} />
+
+              {/* Storage Path - required where the agent places the weights on the nodes */}
               <div>
                 <label htmlFor="storagePath" className={labelStyles.base}>
-                  Storage Path *{' '}
+                  Storage Path{pathRequired && ' *'}{' '}
                   <span className="text-muted-foreground text-xs">
                     (e.g., /raid/models/microsoft/phi-4-gguf)
                   </span>
@@ -604,8 +670,28 @@ export default function CreateModelPage() {
                   <p className={errorClassName}>{errors.spec.storage.path.message}</p>
                 )}
                 <p className={helpTextClassName}>
-                  Local filesystem path where the model will be stored or is located
+                  {pathRequired
+                    ? 'Local filesystem path where the model will be stored or is located'
+                    : 'Not used for this storage type: the weights are not placed on the nodes'}
                 </p>
+              </div>
+
+              {/* Download policy and distribution (OME v1.3); left out unless chosen */}
+              <div className={gridStyles.cols2}>
+                <FormSelect
+                  label="Download Policy"
+                  options={DOWNLOAD_POLICY_OPTIONS}
+                  helpText={DOWNLOAD_POLICY_HELP}
+                  error={errors.spec?.storage?.downloadPolicy?.message}
+                  {...register('spec.storage.downloadPolicy')}
+                />
+                <FormSelect
+                  label="Distribution"
+                  options={distributionOptions}
+                  helpText={MODEL_DISTRIBUTION_HELP}
+                  error={errors.spec?.distribution?.message}
+                  {...register('spec.distribution')}
+                />
               </div>
 
               {/* Generated URI Display */}
