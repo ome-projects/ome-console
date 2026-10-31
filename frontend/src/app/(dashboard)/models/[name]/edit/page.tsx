@@ -186,14 +186,17 @@ export default function EditModelPage() {
           ...model.spec,
           vendor: data.spec.vendor || undefined,
           modelParameterSize: data.spec.modelParameterSize || undefined,
+          // Spread the stored objects so fields the form does not edit (operator, weight) survive
           modelFormat: data.spec.modelFormat?.name
             ? {
+                ...model.spec.modelFormat,
                 name: data.spec.modelFormat.name,
                 version: data.spec.modelFormat.version || undefined,
               }
             : model.spec.modelFormat,
           modelFramework: data.spec.modelFramework?.name
             ? {
+                ...model.spec.modelFramework,
                 name: data.spec.modelFramework.name,
                 version: data.spec.modelFramework.version || undefined,
               }

@@ -37,6 +37,8 @@ export default function ImportModelPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchParams, setSearchParams] = useState<HuggingFaceSearchParams>({})
   const [selectedModel, setSelectedModel] = useState<HuggingFaceModelSearchResult | null>(null)
+  // Counts model selections, so the format detection below also runs for a repeated one
+  const [selection, setSelection] = useState(0)
   const [modelScope, setModelScope] = useState<ModelScope>(ModelScope.Cluster)
   const [namespace, setNamespace] = useState('default')
   const [modelName, setModelName] = useState('')
@@ -78,9 +80,11 @@ export default function ImportModelPage() {
     modelInfo?.detectedFormat && modelInfo.detectedFormat !== 'unknown'
       ? modelInfo.detectedFormat
       : ''
+  // Each selection starts from the detected format. Picking the same repository again, or one
+  // whose cached detection matches, leaves detectedFormat unchanged; `selection` re-runs this.
   useEffect(() => {
     if (detectedFormat) setModelFormat((current) => current || detectedFormat)
-  }, [detectedFormat])
+  }, [detectedFormat, selection])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -118,6 +122,7 @@ export default function ImportModelPage() {
 
   const handleSelectModel = (model: HuggingFaceModelSearchResult) => {
     setSelectedModel(model)
+    setSelection((n) => n + 1)
     // Auto-generate model name from HF model ID
     setModelName(model.modelId.replace('/', '-').toLowerCase())
     // Let the detection for this repository fill the format in
@@ -497,6 +502,7 @@ export default function ImportModelPage() {
                 </label>
                 <select
                   id="modelFormat"
+                  aria-required="true"
                   value={modelFormat}
                   onChange={(e) => setModelFormat(e.target.value)}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
