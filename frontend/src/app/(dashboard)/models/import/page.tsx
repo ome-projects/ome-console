@@ -11,9 +11,20 @@ import {
 import { useNamespaces } from '@/lib/hooks/useNamespaces'
 import {
   ModelScope,
+  type BaseModelSpec,
+  type DownloadPolicy,
   type HuggingFaceModelSearchResult,
   type HuggingFaceSearchParams,
+  type ModelDistribution,
+  type StorageSpec,
 } from '@/lib/types/model'
+import {
+  MODEL_FORMAT_OPTIONS,
+  MODEL_DISTRIBUTION_OPTIONS,
+  MODEL_DISTRIBUTION_HELP,
+  DOWNLOAD_POLICY_OPTIONS,
+  DOWNLOAD_POLICY_HELP,
+} from '@/lib/constants/model-options'
 import { Spinner } from '@/components/ui/Spinner'
 
 type WizardStep = 'search' | 'scope' | 'review' | 'importing'
@@ -26,10 +37,15 @@ export default function ImportModelPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchParams, setSearchParams] = useState<HuggingFaceSearchParams>({})
   const [selectedModel, setSelectedModel] = useState<HuggingFaceModelSearchResult | null>(null)
+  // Counts model selections, so the format detection below also runs for a repeated one
+  const [selection, setSelection] = useState(0)
   const [modelScope, setModelScope] = useState<ModelScope>(ModelScope.Cluster)
   const [namespace, setNamespace] = useState('default')
   const [modelName, setModelName] = useState('')
   const [storagePath, setStoragePath] = useState('')
+  const [modelFormat, setModelFormat] = useState('')
+  const [distribution, setDistribution] = useState<ModelDistribution | ''>('')
+  const [downloadPolicy, setDownloadPolicy] = useState<DownloadPolicy | ''>('')
   const [vendor, setVendor] = useState('')
   const [version, setVersion] = useState('')
   const [huggingfaceToken, setHuggingfaceToken] = useState('')
@@ -58,6 +74,17 @@ export default function ImportModelPage() {
       setNamespace(defaultNs)
     }
   }, [namespacesData])
+
+  // The backend reads the format off the repository's files; "unknown" means it found none
+  const detectedFormat =
+    modelInfo?.detectedFormat && modelInfo.detectedFormat !== 'unknown'
+      ? modelInfo.detectedFormat
+      : ''
+  // Each selection starts from the detected format. Picking the same repository again, or one
+  // whose cached detection matches, leaves detectedFormat unchanged; `selection` re-runs this.
+  useEffect(() => {
+    if (detectedFormat) setModelFormat((current) => current || detectedFormat)
+  }, [detectedFormat, selection])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -95,8 +122,11 @@ export default function ImportModelPage() {
 
   const handleSelectModel = (model: HuggingFaceModelSearchResult) => {
     setSelectedModel(model)
+    setSelection((n) => n + 1)
     // Auto-generate model name from HF model ID
     setModelName(model.modelId.replace('/', '-').toLowerCase())
+    // Let the detection for this repository fill the format in
+    setModelFormat('')
     // Auto-populate vendor from the model author (first part of modelId)
     const authorPart = model.modelId.split('/')[0]
     if (authorPart) {
@@ -114,6 +144,10 @@ export default function ImportModelPage() {
       setError('Model name is required')
       return
     }
+    if (!modelFormat) {
+      setError('Model format is required: it could not be detected from the repository')
+      return
+    }
     setError(null)
     setStep('review')
   }
@@ -125,27 +159,30 @@ export default function ImportModelPage() {
     setError(null)
 
     try {
-      // Detect model format from siblings
-      const detectedFormat = modelInfo.detectedFormat || 'safetensors'
-
       // Build storage spec with hf:// URI scheme
       // Note: The backend automatically adds storage.key when huggingfaceToken is provided
-      const storageSpec: { storageUri: string; path?: string } = {
+      const storageSpec: StorageSpec = {
         storageUri: `hf://${selectedModel.modelId}`,
       }
       if (storagePath.trim()) {
         storageSpec.path = storagePath.trim()
       }
+      if (downloadPolicy) {
+        storageSpec.downloadPolicy = downloadPolicy
+      }
 
-      // Build model spec
-      const modelSpec: Record<string, unknown> = {
+      // Build model spec; the format is the detected one unless the user changed it
+      const modelSpec: BaseModelSpec = {
         modelFormat: {
-          name: detectedFormat,
+          name: modelFormat,
         },
         modelType: modelConfig?.model_type || 'text-generation',
         modelArchitecture: modelConfig?.architectures?.[0] || '',
         storage: storageSpec,
         displayName: selectedModel.modelId,
+      }
+      if (distribution) {
+        modelSpec.distribution = distribution
       }
 
       // Add optional fields if provided
@@ -458,6 +495,33 @@ export default function ImportModelPage() {
                 </div>
               </div>
 
+              {/* Model Format: detected from the repository, or chosen when detection found nothing */}
+              <div>
+                <label htmlFor="modelFormat" className="block text-sm font-medium text-gray-700">
+                  Model Format *
+                </label>
+                <select
+                  id="modelFormat"
+                  aria-required="true"
+                  value={modelFormat}
+                  onChange={(e) => setModelFormat(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                >
+                  {MODEL_FORMAT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500">
+                  {isLoadingInfo
+                    ? 'Detecting the format from the repository files...'
+                    : detectedFormat
+                      ? `Detected ${detectedFormat} from the repository files`
+                      : 'Not detected from the repository files; choose the format of the weights'}
+                </p>
+              </div>
+
               {/* Storage Path */}
               <div>
                 <label htmlFor="storagePath" className="block text-sm font-medium text-gray-700">
@@ -475,6 +539,49 @@ export default function ImportModelPage() {
                   Local filesystem path where the model will be stored. If not specified, the system
                   will use a default path.
                 </p>
+              </div>
+
+              {/* Download policy and distribution (OME v1.3); left out unless chosen */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label
+                    htmlFor="downloadPolicy"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Download Policy
+                  </label>
+                  <select
+                    id="downloadPolicy"
+                    value={downloadPolicy}
+                    onChange={(e) => setDownloadPolicy(e.target.value as DownloadPolicy | '')}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                  >
+                    {DOWNLOAD_POLICY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-sm text-gray-500">{DOWNLOAD_POLICY_HELP}</p>
+                </div>
+                <div>
+                  <label htmlFor="distribution" className="block text-sm font-medium text-gray-700">
+                    Distribution
+                  </label>
+                  <select
+                    id="distribution"
+                    value={distribution}
+                    onChange={(e) => setDistribution(e.target.value as ModelDistribution | '')}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                  >
+                    {MODEL_DISTRIBUTION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-sm text-gray-500">{MODEL_DISTRIBUTION_HELP}</p>
+                </div>
               </div>
 
               {/* HuggingFace Token */}
@@ -581,10 +688,23 @@ export default function ImportModelPage() {
                         </dd>
                       </div>
                     )}
-                    {modelInfo?.detectedFormat && (
+                    <div>
+                      <dt className="text-gray-500">Model Format</dt>
+                      <dd className="font-medium text-gray-900">
+                        {modelFormat}
+                        {modelFormat === detectedFormat && ' (detected)'}
+                      </dd>
+                    </div>
+                    {downloadPolicy && (
                       <div>
-                        <dt className="text-gray-500">Detected Format</dt>
-                        <dd className="font-medium text-gray-900">{modelInfo.detectedFormat}</dd>
+                        <dt className="text-gray-500">Download Policy</dt>
+                        <dd className="font-medium text-gray-900">{downloadPolicy}</dd>
+                      </div>
+                    )}
+                    {distribution && (
+                      <div>
+                        <dt className="text-gray-500">Distribution</dt>
+                        <dd className="font-medium text-gray-900">{distribution}</dd>
                       </div>
                     )}
                     {modelInfo?.estimatedSize != null && modelInfo.estimatedSize > 0 && (
