@@ -20,4 +20,6 @@ export {
   FormRow,
 } from './FormField'
 export { RuntimeForm } from './runtime'
+export { ServiceForm } from './service'
+export { ComponentExtensionFields, AutoscalerFields } from './shared'
 export { VolumeForm } from './VolumeForm'
