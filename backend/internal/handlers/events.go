@@ -21,6 +21,10 @@ const (
 	// sseWriteTimeout is renewed before every write. The server's global WriteTimeout would
 	// end this long-lived response; a per-write deadline still drops a client that stops reading.
 	sseWriteTimeout = 2 * keepAliveInterval
+	// shutdownWriteGrace is how long a write in flight when shutdown starts may still take. A
+	// healthy client finishes it, and the response's last chunk, well within it; a stalled one is
+	// cut off once it passes.
+	shutdownWriteGrace = time.Second
 )
 
 // defaultAllowedOrigins is used when CORS_ALLOWED_ORIGINS is not set
@@ -87,8 +91,9 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	// would cut the stream. Writers that cannot set deadlines (tests) are left alone.
 	controller := http.NewResponseController(c.Writer)
 	// A write to a stalled client blocks until that deadline. If shutdown starts during a write,
-	// the deadline is moved to now so the write returns; a stream that is idle at that moment is
-	// left alone so the response can end cleanly. Nothing is written once shutdown has started.
+	// the deadline is cut to shutdownWriteGrace so a stalled write returns, while one that is
+	// just finishing still lets the response end cleanly; a stream that is idle at that moment is
+	// left alone. Nothing is written once shutdown has started.
 	var mu sync.Mutex
 	frozen, writing := false, false
 	write := func(frame string) bool {
@@ -118,8 +123,10 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 		case <-shutdown:
 			mu.Lock()
 			frozen = true
+			// writing is still true briefly after a write's bytes went out, so a deadline of now
+			// could also cut off the response's last chunk and end a healthy stream with an EOF.
 			if writing {
-				_ = controller.SetWriteDeadline(time.Now())
+				_ = controller.SetWriteDeadline(time.Now().Add(shutdownWriteGrace))
 			}
 			mu.Unlock()
 		case <-ctx.Done():
